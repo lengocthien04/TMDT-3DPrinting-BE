@@ -94,40 +94,6 @@ http://localhost:3000/api/docs
 - `PATCH /api/v1/users/password` - Change password
 - `DELETE /api/v1/users/account` - Delete account
 
-### Categories
-
-- `GET /api/v1/categories` - Get all categories
-- `POST /api/v1/categories` - Create category
-- `GET /api/v1/categories/:id` - Get category by ID
-- `PUT /api/v1/categories/:id` - Update category
-- `DELETE /api/v1/categories/:id` - Delete category
-
-### Expenses
-
-- `GET /api/v1/expenses` - Get all expenses (with filters)
-- `POST /api/v1/expenses` - Create expense
-- `GET /api/v1/expenses/recent` - Get recent expenses
-- `GET /api/v1/expenses/:id` - Get expense by ID
-- `PUT /api/v1/expenses/:id` - Update expense
-- `DELETE /api/v1/expenses/:id` - Delete expense
-
-### Budgets
-
-- `GET /api/v1/budgets` - Get all budgets
-- `POST /api/v1/budgets` - Create budget
-- `GET /api/v1/budgets/current` - Get current active budget
-- `GET /api/v1/budgets/:id` - Get budget by ID
-- `GET /api/v1/budgets/:id/status` - Get budget status
-- `PUT /api/v1/budgets/:id` - Update budget
-- `DELETE /api/v1/budgets/:id` - Delete budget
-
-### Statistics
-
-- `GET /api/v1/statistics/dashboard` - Get dashboard statistics
-- `GET /api/v1/statistics/daily` - Get daily statistics
-- `GET /api/v1/statistics/monthly` - Get monthly statistics
-- `GET /api/v1/statistics/by-category` - Get category statistics
-
 ## Testing
 
 ```bash
@@ -192,10 +158,6 @@ ExpenseTracker_api/
 ├── src/
 │   ├── auth/              # Authentication module
 │   ├── users/             # User management module
-│   ├── categories/        # Categories module
-│   ├── expenses/          # Expenses module
-│   ├── budgets/           # Budgets module
-│   ├── statistics/        # Statistics and analytics module
 │   ├── common/            # Common utilities (filters, interceptors, pipes)
 │   ├── config/            # Configuration module
 │   ├── database/          # Database module with Prisma
