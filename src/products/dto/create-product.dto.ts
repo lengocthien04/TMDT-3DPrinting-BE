@@ -10,6 +10,7 @@ import {
   IsBoolean,
   IsArray,
   IsUrl,
+  IsUUID,
 } from 'class-validator';
 
 export class CreateProductDto {
@@ -66,4 +67,18 @@ export class CreateProductDto {
   @IsUrl({}, { each: true })
   @IsOptional()
   images?: string[];
+
+  @ApiProperty({
+    description: 'Array of tag IDs to link to this product',
+    example: [
+      '123e4567-e89b-12d3-a456-426614174000',
+      '223e4567-e89b-12d3-a456-426614174000',
+    ],
+    required: false,
+    type: [String],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  tags?: string[];
 }

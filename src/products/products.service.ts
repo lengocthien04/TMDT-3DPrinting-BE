@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { UserRole } from '@prisma/client';
@@ -13,6 +14,7 @@ type CreateProductPayload = {
   basePrice: number;
   isActive?: boolean;
   images?: string[];
+  tags?: string[];
 };
 
 type UpdateProductPayload = Partial<CreateProductPayload>;
@@ -24,7 +26,7 @@ export class ProductsService {
   async findAll(isActive?: boolean) {
     const where = isActive !== undefined ? { isActive } : {};
 
-    return this.prisma.product.findMany({
+    const products = await this.prisma.product.findMany({
       where,
       include: {
         variants: {
@@ -55,6 +57,12 @@ export class ProductsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    // Transform tags to return only tag data without productId/tagId
+    return products.map((product) => ({
+      ...product,
+      tags: product.tags.map((pt) => pt.tag),
+    }));
   }
 
   async findOne(id: string) {
@@ -132,6 +140,7 @@ export class ProductsService {
         price:
           Number(product.basePrice) * (variant.material.priceFactor ?? 1.0),
       })),
+      tags: product.tags.map((pt) => pt.tag),
     };
 
     return productWithPrices;
@@ -142,7 +151,18 @@ export class ProductsService {
       throw new ForbiddenException(ERROR_MESSAGES.PRODUCT.PERMISSION_DENIED);
     }
 
-    const { name, description, basePrice, isActive, images } = payload;
+    const { name, description, basePrice, isActive, images, tags } = payload;
+
+    // Validate all tags exist
+    if (tags?.length) {
+      const existingTags = await this.prisma.tag.findMany({
+        where: { id: { in: tags } },
+      });
+
+      if (existingTags.length !== tags.length) {
+        throw new BadRequestException('One or more tag IDs do not exist.');
+      }
+    }
 
     const product = await this.prisma.product.create({
       data: {
@@ -159,6 +179,13 @@ export class ProductsService {
               })),
             }
           : undefined,
+        tags: tags?.length
+          ? {
+              create: tags.map((tagId) => ({
+                tag: { connect: { id: tagId } },
+              })),
+            }
+          : undefined,
       },
       include: {
         variants: true,
@@ -169,7 +196,10 @@ export class ProductsService {
       },
     });
 
-    return product;
+    return {
+      ...product,
+      tags: product.tags.map((pt) => pt.tag),
+    };
   }
 
   async update(id: string, dto: UpdateProductPayload, userRole?: UserRole) {
@@ -183,11 +213,25 @@ export class ProductsService {
         images: {
           select: { id: true, url: true },
         },
+        tags: {
+          select: { tagId: true },
+        },
       },
     });
 
     if (!existing) {
       throw new NotFoundException(ERROR_MESSAGES.PRODUCT.NOT_FOUND);
+    }
+
+    // Validate all new tags exist
+    if (dto.tags?.length) {
+      const existingTags = await this.prisma.tag.findMany({
+        where: { id: { in: dto.tags } },
+      });
+
+      if (existingTags.length !== dto.tags.length) {
+        throw new BadRequestException('One or more tag IDs do not exist.');
+      }
     }
 
     // Handle image updates if images array is provided
@@ -224,6 +268,40 @@ export class ProductsService {
       }
     }
 
+    // Handle tag updates if tags array is provided
+    if (dto.tags !== undefined) {
+      const existingTagIds = existing.tags.map((pt) => pt.tagId);
+      const newTagIds = dto.tags || [];
+
+      // Find tags to add
+      const tagsToAdd = newTagIds.filter((id) => !existingTagIds.includes(id));
+
+      // Find tags to remove
+      const tagsToRemove = existingTagIds.filter(
+        (id) => !newTagIds.includes(id),
+      );
+
+      // Delete tag links that are no longer needed
+      if (tagsToRemove.length > 0) {
+        await this.prisma.productTag.deleteMany({
+          where: {
+            productId: id,
+            tagId: { in: tagsToRemove },
+          },
+        });
+      }
+
+      // Create new tag links
+      if (tagsToAdd.length > 0) {
+        await this.prisma.productTag.createMany({
+          data: tagsToAdd.map((tagId) => ({
+            productId: id,
+            tagId,
+          })),
+        });
+      }
+    }
+
     const updated = await this.prisma.product.update({
       where: { id },
       data: {
@@ -252,7 +330,10 @@ export class ProductsService {
       },
     });
 
-    return updated;
+    return {
+      ...updated,
+      tags: updated.tags.map((pt) => pt.tag),
+    };
   }
 
   async delete(id: string, userRole?: UserRole) {

@@ -55,7 +55,7 @@ docker-compose up -d postgres
 npx prisma migrate dev
 ```
 
-### 6. Seed the database with default categories
+### 6. Seed the database with default data
 
 ```bash
 npm run prisma:seed
