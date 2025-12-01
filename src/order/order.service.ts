@@ -1,5 +1,6 @@
-﻿import {
+import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import {
   Shipment as ShipmentModel,
   ShipmentStatus,
 } from '@prisma/client';
+import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { PrismaService } from '../database/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderItemDto } from './dto/order-item.dto';
@@ -27,12 +29,11 @@ export class OrderService {
           select: {
             id: true,
             sku: true,
-            price: true,
             material: {
               select: { id: true, name: true, color: true },
             },
             product: {
-              select: { id: true, name: true },
+              select: { id: true, name: true, basePrice: true },
             },
           },
         },
@@ -43,12 +44,16 @@ export class OrderService {
     address: true,
   } as const;
 
-  async create(dto: CreateOrderDto) {
+  async create(dto: CreateOrderDto, currentUser: JwtPayload) {
     if (!dto.items?.length) {
-      throw new BadRequestException('Đơn hàng phải có ít nhất 1 sản phẩm');
+      throw new BadRequestException('Don hang phai co it nhat 1 san pham');
     }
 
-    const totalAmount = dto.totalAmount ?? this.calculateTotal(dto.items);
+    this.assertOwnership(dto.userId, currentUser);
+    await this.ensureAddressBelongsToUser(dto.addressId, dto.userId);
+
+    const variants = await this.loadVariants(dto.items);
+    const totalAmount = this.calculateTotalFromVariants(dto.items, variants);
 
     return this.prisma.order.create({
       data: {
@@ -60,7 +65,7 @@ export class OrderService {
           create: dto.items.map((item) => ({
             variantId: item.variantId,
             quantity: item.quantity,
-            price: item.price,
+            price: variants[item.variantId].price,
           })),
         },
         payment: dto.payment
@@ -89,10 +94,17 @@ export class OrderService {
     });
   }
 
-  async findAll(userId?: string, status?: OrderStatus) {
+  async findAll(
+    userId: string | undefined,
+    status: OrderStatus | undefined,
+    currentUser?: JwtPayload,
+  ) {
+    const scopedUserId =
+      currentUser && !this.isAdmin(currentUser) ? currentUser.sub : userId;
+
     return this.prisma.order.findMany({
       where: {
-        ...(userId ? { userId } : {}),
+        ...(scopedUserId ? { userId: scopedUserId } : {}),
         ...(status ? { status } : {}),
       },
       include: this.orderInclude,
@@ -100,39 +112,51 @@ export class OrderService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, currentUser: JwtPayload) {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: this.orderInclude,
     });
 
     if (!order) {
-      throw new NotFoundException('Order không tồn tại');
+      throw new NotFoundException('Order khong ton tai');
     }
 
+    this.assertOwnership(order.userId, currentUser);
     return order;
   }
 
-  async update(id: string, dto: UpdateOrderDto) {
+  async update(id: string, dto: UpdateOrderDto, currentUser: JwtPayload) {
     const existing = await this.prisma.order.findUnique({
       where: { id },
       include: {
         payment: true,
         shipment: true,
+        user: { select: { id: true } },
       },
     });
 
     if (!existing) {
-      throw new NotFoundException('Order không tồn tại');
+      throw new NotFoundException('Order khong ton tai');
     }
 
+    this.assertOwnership(existing.userId, currentUser);
+
     if (dto.items && dto.items.length === 0) {
-      throw new BadRequestException('Danh sách sản phẩm không hợp lệ');
+      throw new BadRequestException('Danh sach san pham khong hop le');
     }
+
+    if (dto.addressId) {
+      await this.ensureAddressBelongsToUser(dto.addressId, existing.userId);
+    }
+
+    const variants = dto.items ? await this.loadVariants(dto.items) : null;
 
     const totalAmount =
       dto.totalAmount ??
-      (dto.items ? this.calculateTotal(dto.items) : Number(existing.totalAmount));
+      (dto.items && variants
+        ? this.calculateTotalFromVariants(dto.items, variants)
+        : Number(existing.totalAmount));
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.items) {
@@ -150,7 +174,7 @@ export class OrderService {
                 create: dto.items.map((item) => ({
                   variantId: item.variantId,
                   quantity: item.quantity,
-                  price: item.price,
+                  price: variants![item.variantId].price,
                 })),
               }
             : undefined,
@@ -164,13 +188,19 @@ export class OrderService {
     });
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
+  async remove(id: string, currentUser: JwtPayload) {
+    await this.findOne(id, currentUser);
     return this.prisma.order.delete({ where: { id }, include: this.orderInclude });
   }
 
-  private calculateTotal(items: OrderItemDto[]) {
-    return items.reduce((sum, item) => sum + item.quantity * item.price, 0);
+  private calculateTotalFromVariants(
+    items: OrderItemDto[],
+    variants: Record<string, { price: number; stock?: number | null }>,
+  ) {
+    return items.reduce(
+      (sum, item) => sum + item.quantity * variants[item.variantId].price,
+      0,
+    );
   }
 
   private toDate(value?: string) {
@@ -236,5 +266,66 @@ export class OrderService {
         deliveredAt: this.toDate(data.deliveredAt),
       },
     };
+  }
+
+  private async ensureAddressBelongsToUser(addressId: string, userId: string) {
+    const address = await this.prisma.address.findUnique({
+      where: { id: addressId },
+      select: { userId: true },
+    });
+
+    if (!address) {
+      throw new NotFoundException('Address khong ton tai');
+    }
+
+    if (address.userId !== userId) {
+      throw new ForbiddenException('Dia chi khong thuoc nguoi dung nay');
+    }
+  }
+
+  private async loadVariants(items: OrderItemDto[]) {
+    const ids = [...new Set(items.map((i) => i.variantId))];
+    const variants = await this.prisma.variant.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        stock: true,
+        product: { select: { basePrice: true } },
+      },
+    });
+
+    if (variants.length !== ids.length) {
+      throw new NotFoundException('Co bien the khong ton tai');
+    }
+
+    const map: Record<string, { price: number; stock?: number | null }> = {};
+    variants.forEach((v) => {
+      map[v.id] = { price: Number(v.product.basePrice), stock: (v as any).stock };
+    });
+
+    for (const item of items) {
+      const variant = map[item.variantId];
+      if (variant.stock !== undefined && variant.stock !== null && item.quantity > variant.stock) {
+        throw new BadRequestException('So luong vuot qua ton kho');
+      }
+    }
+
+    return map;
+  }
+
+  private assertOwnership(orderUserId: string, currentUser?: JwtPayload) {
+    if (!currentUser) {
+      throw new ForbiddenException('Khong xac dinh nguoi dung');
+    }
+    if (this.isAdmin(currentUser)) {
+      return;
+    }
+    if (orderUserId !== currentUser.sub) {
+      throw new ForbiddenException('Khong co quyen truy cap don hang nay');
+    }
+  }
+
+  private isAdmin(user?: JwtPayload) {
+    return user?.role === 'ADMIN';
   }
 }
