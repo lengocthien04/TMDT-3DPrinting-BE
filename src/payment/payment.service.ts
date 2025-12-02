@@ -53,7 +53,7 @@ export class PaymentService {
       throw new BadRequestException('Don hang nay da co thong tin thanh toan');
     }
 
-    return this.prisma.payment.create({
+    const payment = await this.prisma.payment.create({
       data: {
         orderId: dto.orderId,
         method: dto.method,
@@ -63,6 +63,12 @@ export class PaymentService {
       },
       include: this.defaultInclude,
     });
+
+    if (payment.status === PaymentStatus.PAID) {
+      await this.markOrderPaid(payment.order.id, payment.order.status);
+    }
+
+    return payment;
   }
 
   async findAll(
@@ -104,7 +110,7 @@ export class PaymentService {
   async update(id: string, dto: UpdatePaymentDto, currentUser: JwtPayload) {
     const payment = await this.prisma.payment.findUnique({
       where: { id },
-      include: { order: { select: { userId: true, status: true } } },
+      include: { order: { select: { id: true, userId: true, status: true } } },
     });
 
     if (!payment) {
@@ -114,7 +120,11 @@ export class PaymentService {
     this.assertOrderOwnership(payment.order.userId, currentUser);
     this.ensureOrderAllowsPayment(payment.order.status);
 
-    return this.prisma.payment.update({
+    if (payment.status === PaymentStatus.PAID && dto.status && dto.status !== PaymentStatus.PAID) {
+      throw new BadRequestException('Khong the sua thanh toan da thanh cong sang trang thai khac');
+    }
+
+    const updated = await this.prisma.payment.update({
       where: { id },
       data: {
         method: dto.method,
@@ -124,12 +134,18 @@ export class PaymentService {
       },
       include: this.defaultInclude,
     });
+
+    if (dto.status === PaymentStatus.PAID) {
+      await this.markOrderPaid(payment.order.id, payment.order.status);
+    }
+
+    return updated;
   }
 
   async remove(id: string, currentUser: JwtPayload) {
     const payment = await this.prisma.payment.findUnique({
       where: { id },
-      include: { order: { select: { userId: true, status: true } } },
+      include: { order: { select: { id: true, userId: true, status: true } } },
     });
 
     if (!payment) {
@@ -138,6 +154,9 @@ export class PaymentService {
 
     this.assertOrderOwnership(payment.order.userId, currentUser);
     this.ensureOrderAllowsPayment(payment.order.status);
+    if (payment.status === PaymentStatus.PAID) {
+      throw new BadRequestException('Khong the xoa thanh toan da thanh cong');
+    }
 
     return this.prisma.payment.delete({ where: { id } });
   }
@@ -159,6 +178,27 @@ export class PaymentService {
   private ensureOrderAllowsPayment(status: OrderStatus) {
     if (status === OrderStatus.CANCELLED) {
       throw new BadRequestException('Khong the thanh toan cho don hang da huy');
+    }
+    if (status === OrderStatus.DELIVERED) {
+      throw new BadRequestException('Don hang da giao, khong the thay doi thanh toan');
+    }
+  }
+
+  private async markOrderPaid(orderId: string, currentStatus: OrderStatus) {
+    const terminalStatuses: OrderStatus[] = [
+      OrderStatus.CANCELLED,
+      OrderStatus.DELIVERED,
+    ];
+    if (terminalStatuses.includes(currentStatus)) {
+      return;
+    }
+    if (currentStatus === OrderStatus.PENDING) {
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: {
+          status: OrderStatus.CONFIRMED,
+        },
+      });
     }
   }
 

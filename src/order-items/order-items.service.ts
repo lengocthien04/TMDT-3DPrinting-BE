@@ -165,19 +165,46 @@ export class OrderItemsService {
     orderId: string,
     client: PrismaService | Prisma.TransactionClient = this.prisma,
   ) {
-    const items = await client.orderItem.findMany({
-      where: { orderId },
-      select: { quantity: true, price: true },
-    });
+    const [items, order] = await Promise.all([
+      client.orderItem.findMany({
+        where: { orderId },
+        select: { quantity: true, price: true },
+      }),
+      client.order.findUnique({
+        where: { id: orderId },
+        select: {
+          voucher: {
+            select: {
+              id: true,
+              discount: true,
+              expiresAt: true,
+              isActive: true,
+            },
+          },
+        },
+      }),
+    ]);
 
-    const total = items.reduce(
+    const itemsTotal = items.reduce(
       (sum, item) => sum + item.quantity * Number(item.price),
       0,
     );
 
+    let discountAmount = 0;
+    if (order?.voucher) {
+      if (!order.voucher.isActive) {
+        throw new BadRequestException('Voucher khong hoat dong');
+      }
+      if (order.voucher.expiresAt.getTime() <= Date.now()) {
+        throw new BadRequestException('Voucher da het han');
+      }
+      const rate = Math.min(Math.max(order.voucher.discount, 0), 1);
+      discountAmount = itemsTotal * rate;
+    }
+
     await client.order.update({
       where: { id: orderId },
-      data: { totalAmount: total },
+      data: { totalAmount: Math.max(0, itemsTotal - discountAmount), discountAmount },
     });
   }
 

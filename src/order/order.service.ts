@@ -9,6 +9,7 @@ import {
   Payment as PaymentModel,
   PaymentMethod,
   PaymentStatus,
+  Prisma,
   Shipment as ShipmentModel,
   ShipmentStatus,
 } from '@prisma/client';
@@ -42,6 +43,9 @@ export class OrderService {
     payment: true,
     shipment: true,
     address: true,
+    voucher: {
+      select: { id: true, code: true, discount: true, expiresAt: true, isActive: true },
+    },
   } as const;
 
   async create(dto: CreateOrderDto, currentUser: JwtPayload) {
@@ -49,18 +53,26 @@ export class OrderService {
       throw new BadRequestException('Don hang phai co it nhat 1 san pham');
     }
 
-    this.assertOwnership(dto.userId, currentUser);
-    await this.ensureAddressBelongsToUser(dto.addressId, dto.userId);
+    const userId = this.resolveUserId(dto.userId, currentUser);
+    this.assertOwnership(userId, currentUser);
+    await this.ensureAddressBelongsToUser(dto.addressId, userId);
 
     const variants = await this.loadVariants(dto.items);
-    const totalAmount = this.calculateTotalFromVariants(dto.items, variants);
+    const itemsTotal = this.calculateTotalFromVariants(dto.items, variants);
+    const voucherResult = dto.voucherCode
+      ? await this.applyVoucherCode(dto.voucherCode, itemsTotal)
+      : null;
+
+    const totalAmount = this.applyDiscount(itemsTotal, voucherResult?.discountAmount);
 
     return this.prisma.order.create({
       data: {
-        userId: dto.userId,
+        userId,
         addressId: dto.addressId,
         status: dto.status ?? OrderStatus.PENDING,
         totalAmount,
+        discountAmount: voucherResult?.discountAmount ?? 0,
+        voucherId: voucherResult?.voucherId,
         items: {
           create: dto.items.map((item) => ({
             variantId: item.variantId,
@@ -133,6 +145,7 @@ export class OrderService {
         payment: true,
         shipment: true,
         user: { select: { id: true } },
+        voucher: { select: { id: true, code: true, discount: true, expiresAt: true, isActive: true } },
       },
     });
 
@@ -152,16 +165,32 @@ export class OrderService {
 
     const variants = dto.items ? await this.loadVariants(dto.items) : null;
 
-    const totalAmount =
-      dto.totalAmount ??
-      (dto.items && variants
-        ? this.calculateTotalFromVariants(dto.items, variants)
-        : Number(existing.totalAmount));
-
     return this.prisma.$transaction(async (tx) => {
       if (dto.items) {
         await tx.orderItem.deleteMany({ where: { orderId: id } });
+        await tx.order.update({
+          where: { id },
+          data: {
+            items: {
+              create: dto.items.map((item) => ({
+                variantId: item.variantId,
+                quantity: item.quantity,
+                price: variants![item.variantId].price,
+              })),
+            },
+          },
+        });
       }
+
+      const itemsTotal = await this.calculateItemsTotalFromDb(id, tx);
+      const voucherResult = await this.resolveVoucherForUpdate({
+        incomingCode: dto.voucherCode,
+        existingVoucherId: existing.voucher?.id ?? null,
+        itemsTotal,
+        client: tx,
+      });
+
+      const totalAmount = this.applyDiscount(itemsTotal, voucherResult?.discountAmount);
 
       const updated = await tx.order.update({
         where: { id },
@@ -169,15 +198,8 @@ export class OrderService {
           addressId: dto.addressId ?? existing.addressId,
           status: dto.status ?? existing.status,
           totalAmount,
-          items: dto.items
-            ? {
-                create: dto.items.map((item) => ({
-                  variantId: item.variantId,
-                  quantity: item.quantity,
-                  price: variants![item.variantId].price,
-                })),
-              }
-            : undefined,
+          discountAmount: voucherResult?.discountAmount ?? 0,
+          voucherId: voucherResult?.voucherId ?? null,
           payment: this.buildPaymentWrite(existing.payment, dto.payment, totalAmount),
           shipment: this.buildShipmentWrite(existing.shipment, dto.shipment),
         },
@@ -201,6 +223,10 @@ export class OrderService {
       (sum, item) => sum + item.quantity * variants[item.variantId].price,
       0,
     );
+  }
+
+  private applyDiscount(total: number, discountAmount = 0) {
+    return Math.max(0, total - discountAmount);
   }
 
   private toDate(value?: string) {
@@ -311,6 +337,97 @@ export class OrderService {
     }
 
     return map;
+  }
+
+  private async calculateItemsTotalFromDb(
+    orderId: string,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
+  ) {
+    const items = await client.orderItem.findMany({
+      where: { orderId },
+      select: { quantity: true, price: true },
+    });
+
+    return items.reduce((sum, item) => sum + item.quantity * Number(item.price), 0);
+  }
+
+  private async applyVoucherCode(
+    code: string,
+    total: number,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
+  ) {
+    const voucher = await client.voucher.findUnique({
+      where: { code },
+      select: { id: true, code: true, discount: true, expiresAt: true, isActive: true },
+    });
+
+    if (!voucher) {
+      throw new NotFoundException('Voucher khong ton tai');
+    }
+
+    this.validateVoucher(voucher);
+    const discountAmount = this.calculateDiscount(total, voucher.discount);
+    return { voucherId: voucher.id, discountAmount };
+  }
+
+  private async applyVoucherId(
+    voucherId: string,
+    total: number,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
+  ) {
+    const voucher = await client.voucher.findUnique({
+      where: { id: voucherId },
+      select: { id: true, code: true, discount: true, expiresAt: true, isActive: true },
+    });
+    if (!voucher) {
+      throw new NotFoundException('Voucher khong ton tai');
+    }
+    this.validateVoucher(voucher);
+    const discountAmount = this.calculateDiscount(total, voucher.discount);
+    return { voucherId: voucher.id, discountAmount };
+  }
+
+  private validateVoucher(voucher: { isActive: boolean; expiresAt: Date }) {
+    if (!voucher.isActive) {
+      throw new BadRequestException('Voucher khong hoat dong');
+    }
+    if (voucher.expiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('Voucher da het han');
+    }
+  }
+
+  private calculateDiscount(total: number, discountRate: number) {
+    const rate = Math.min(Math.max(discountRate, 0), 1);
+    return total * rate;
+  }
+
+  private async resolveVoucherForUpdate(params: {
+    incomingCode?: string | null;
+    existingVoucherId: string | null;
+    itemsTotal: number;
+    client: PrismaService | Prisma.TransactionClient;
+  }) {
+    const { incomingCode, existingVoucherId, itemsTotal, client } = params;
+    if (incomingCode === null) {
+      return null;
+    }
+    if (incomingCode) {
+      return this.applyVoucherCode(incomingCode, itemsTotal, client);
+    }
+    if (existingVoucherId) {
+      return this.applyVoucherId(existingVoucherId, itemsTotal, client);
+    }
+    return null;
+  }
+
+  private resolveUserId(userId: string | undefined, currentUser: JwtPayload) {
+    if (userId) {
+      if (!this.isAdmin(currentUser) && userId !== currentUser.sub) {
+        throw new ForbiddenException('Khong co quyen tao don hang cho nguoi dung khac');
+      }
+      return userId;
+    }
+    return currentUser.sub;
   }
 
   private assertOwnership(orderUserId: string, currentUser?: JwtPayload) {
