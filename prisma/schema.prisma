@@ -68,7 +68,7 @@ model User {
   refreshTokens RefreshToken[]
   addresses     Address[]
   orders        Order[]
-  carts         Cart[]
+  cart          Cart?
   reviews       Review[]
   qnas          QnA[]
 }
@@ -131,55 +131,54 @@ model Product {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   variants  Variant[]
-  materials Material[]
   images    MediaAsset[]
   reviews   Review[]
   qnas      QnA[]
   tags      ProductTag[]
-  inventory Inventory?
+  // inventory Inventory?
 
   @@map("products")
 }
 
 model Variant {
-  id        String   @id @default(uuid())
-  productId String   @map("product_id")
-  name      String   @db.VarChar(100)
-  price     Decimal  @db.Decimal(12, 2)
-  stock     Int      @default(0)
-  createdAt DateTime @default(now()) @map("created_at")
+  id         String   @id @default(uuid())
+  productId  String   @map("product_id")
+  materialId String   @map("material_id")
+  name       String   @db.VarChar(100)
+  stock      Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
 
-  product  Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  orders   OrderItem[]
-  CartItem CartItem[]
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  material  Material  @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  orders    OrderItem[]
+  CartItem  CartItem[]
 
   @@map("variants")
 }
 
 model Material {
   id          String   @id @default(uuid())
-  productId   String   @map("product_id")
   name        String   @db.VarChar(100)
   color       String?  @db.VarChar(50)
   density     Float?   @db.DoublePrecision
   priceFactor Float?   @default(1.0) @db.DoublePrecision
   createdAt   DateTime @default(now()) @map("created_at")
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variants  Variant[]
 
   @@map("materials")
 }
 
-model Inventory {
-  id        String   @id @default(uuid())
-  productId String   @unique @map("product_id")
-  quantity  Int      @default(0)
-  updatedAt DateTime @updatedAt @map("updated_at")
+// model Inventory {
+//   id        String   @id @default(uuid())
+//   productId String   @unique @map("product_id")
+//   quantity  Int      @default(0)
+//   updatedAt DateTime @updatedAt @map("updated_at")
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+//   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  @@map("inventories")
-}
+//   @@map("inventories")
+// }
 
 model MediaAsset {
   id        String   @id @default(uuid())
@@ -220,7 +219,7 @@ model ProductTag {
 
 model Cart {
   id        String   @id @default(uuid())
-  userId    String   @map("user_id")
+  userId    String   @unique @map("user_id")
   createdAt DateTime @default(now()) @map("created_at")
 
   user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -1,199 +1,176 @@
-# 3D printing store API
+﻿# 3D Printing Store API
 
-A comprehensive REST API for tracking personal expenses, managing budgets, and generating financial insights. Built with NestJS, TypeScript, PostgreSQL, and Prisma.
+Backend NestJS cho nền tảng thương mại điện tử dịch vụ in 3D. Hệ thống quản lý sản phẩm, khách hàng, đơn hàng, thanh toán, giao vận và voucher dựa trên PostgreSQL + Prisma, cung cấp REST API bảo mật bằng JWT.
 
 ## Tech Stack
 
 - **Framework:** NestJS 11
 - **Language:** TypeScript 5
-- **Database:** PostgreSQL 14+ (via Docker)
+- **Database:** PostgreSQL 14+ (Docker)
 - **ORM:** Prisma 6
-- **Authentication:** JWT with Passport.js
+- **Authentication:** JWT + Passport.js
 - **Validation:** class-validator & class-transformer
 - **Documentation:** Swagger/OpenAPI
 - **Testing:** Jest & Supertest
 - **Containerization:** Docker & Docker Compose
 
-## Prerequisites
+## Domain Highlights
 
-- Node.js 18+
-- Docker & Docker Compose
-- npm or yarn
+- **Orders & Order Items:** tạo/cập nhật đơn hàng nhiều dòng sản phẩm, lưu lịch sử giá từng biến thể, cập nhật trạng thái theo `OrderStatus`.
+- **Payments:** mô hình một-một với đơn hàng, hỗ trợ `PaymentMethod`, `PaymentStatus`, lưu transactionId và số tiền thực thu.
+- **Shipments:** quản lý tiến trình vận chuyển (`ShipmentStatus`), tracking, thời điểm gửi/nhận.
+- **Vouchers:** mã giảm giá với phần trăm giảm, ngày hết hạn, cờ kích hoạt; dễ dàng áp dụng cho chiến dịch marketing.
+- **Reviews & Q&A:** khách hàng đánh giá sản phẩm và đặt câu hỏi, admin có thể trả lời.
 
 ## Getting Started
 
-### 1. Clone the repository
-
-```bash
-git clone <repository-url>
-cd TMDT-3DPrinting-BE
-```
-
-### 2. Install dependencies
-
-```bash
-npm install --legacy-peer-deps
-```
-
-### 3. Set up environment variables
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and configure your environment variables.
-
-### 4. Start the database with Docker
-
-```bash
-docker-compose up -d postgres
-```
-
-### 5. Run database migrations
-
-```bash
-npx prisma migrate dev
-```
-
-### 6. Seed the database with default categories
-
-```bash
-npm run prisma:seed
-```
-
-### 7. Start the development server
-
-```bash
-npm run start:dev
-```
-
-The API will be available at `http://localhost:3000`
-
-## API Documentation
-
-Once the server is running, access the interactive Swagger documentation at:
-
-```
-http://localhost:3000/api/docs
-```
+1. **Clone repo**
+   ```bash
+   git clone <repository-url>
+   cd TMDT-3DPrinting-BE
+   ```
+2. **Cài phụ thuộc**
+   ```bash
+   npm install --legacy-peer-deps
+   ```
+3. **Tạo file cấu hình**
+   ```bash
+   cp .env.example .env
+   ```
+4. **Chạy PostgreSQL**
+   ```bash
+   docker-compose up -d postgres
+   ```
+5. **Migrate + seed**
+   ```bash
+   npx prisma migrate dev
+   npm run prisma:seed
+   ```
+6. **Khởi động server**
+   ```bash
+   npm run start:dev
+   ```
+   Swagger nằm tại `http://localhost:3000/api/docs`.
 
 ## API Endpoints
 
 ### Authentication
-
-- `POST /api/v1/auth/register` - Register a new user
-- `POST /api/v1/auth/login` - Login user
-- `POST /api/v1/auth/refresh` - Refresh access token
-- `POST /api/v1/auth/logout` - Logout user
-- `GET /api/v1/auth/me` - Get current user profile
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
 
 ### Users
+- `GET /api/v1/users/profile`
+- `PUT /api/v1/users/profile`
+- `PATCH /api/v1/users/password`
+- `DELETE /api/v1/users/account`
 
-- `GET /api/v1/users/profile` - Get user profile
-- `PUT /api/v1/users/profile` - Update user profile
-- `PATCH /api/v1/users/password` - Change password
-- `DELETE /api/v1/users/account` - Delete account
+### Orders
+- `POST /order` – tạo đơn hàng (items + payment/shipment tùy chọn)
+- `GET /order` – lọc theo `userId` hoặc `status`
+- `GET /order/:id`
+- `PATCH /order/:id`
+- `DELETE /order/:id`
+
+### Order Items
+- `POST /order-items` – thêm dòng sản phẩm vào order
+- `GET /order-items?orderId=...`
+- `GET /order-items/:id`
+- `PATCH /order-items/:id`
+- `DELETE /order-items/:id`
+
+### Payments
+- `POST /payment` – tạo bản ghi thanh toán cho order
+- `GET /payment` – lọc theo `status`, `method`
+- `GET /payment/:id`
+- `PATCH /payment/:id`
+- `DELETE /payment/:id`
+
+### Shipments
+- `POST /shipment`
+- `GET /shipment` – lọc theo `status`
+- `GET /shipment/:id`
+- `PATCH /shipment/:id`
+- `DELETE /shipment/:id`
+
+### Vouchers
+- `POST /vouchers`
+- `GET /vouchers` – tham số `isActive`
+- `GET /vouchers/:id`
+- `PATCH /vouchers/:id`
+- `DELETE /vouchers/:id`
+
+### Reviews & Q&A
+- `POST /reviews` / `PATCH /reviews/:id` / `DELETE /reviews/:id`
+- `GET /reviews?productId=...`
+- `POST /qnas` / `PATCH /qnas/:id/answer` / `DELETE /qnas/:id`
+- `GET /qnas?productId=...`
 
 ## Testing
 
 ```bash
-# Run unit tests
-npm run test
-
-# Run e2e tests
-npm run test:e2e
-
-# Run test coverage
-npm run test:cov
+npm run test        # unit
+npm run test:e2e    # e2e
+npm run test:cov    # coverage
 ```
 
 ## Docker Deployment
 
-### Development
-
 ```bash
-docker-compose up
-```
-
-### Production
-
-```bash
+docker-compose up              # dev
+# hoặc
 docker-compose -f docker-compose.yml up --build
 ```
 
-## Database Management
+## Database & Tooling
 
 ```bash
-# Generate Prisma Client
 npm run prisma:generate
-
-# Create migration
 npm run prisma:migrate
-
-# View database in Prisma Studio
 npm run prisma:studio
-
-# Seed database
 npm run prisma:seed
-```
-
-## Linting & Formatting
-
-```bash
-# Run ESLint
 npm run lint
-
-# Format code with Prettier
 npm run format
 ```
 
-## Project Structure
+## Project Structure (rút gọn)
 
 ```
-ExpenseTracker_api/
-├── prisma/                 # Database schema and migrations
-│   ├── schema.prisma
-│   ├── migrations/
-│   └── seed.ts
-├── src/
-│   ├── auth/              # Authentication module
-│   ├── users/             # User management module
-│   ├── common/            # Common utilities (filters, interceptors, pipes)
-│   ├── config/            # Configuration module
-│   ├── database/          # Database module with Prisma
-│   ├── app.module.ts      # Root application module
-│   └── main.ts            # Application entry point
-├── test/                  # E2E tests
-├── docker/                # Docker configuration
-├── .env                   # Environment variables
-└── docker-compose.yml     # Docker Compose configuration
+src/
+  auth/
+  users/
+  products/
+  order/
+  order-items/
+  payment/
+  shipment/
+  vouchers/
+  reviews/
+  qnas/
+  common/ | config/ | database/
+prisma/
+  schema.prisma
+  migrations/
 ```
 
 ## Security Features
 
-- Password hashing with bcrypt (10 rounds)
-- JWT token-based authentication
-- Refresh token rotation
-- Rate limiting (100 requests/minute)
-- Input validation and sanitization
-- SQL injection prevention (via Prisma)
-- CORS configuration
-- Error handling and user-friendly messages
+- Hash mật khẩu bằng bcrypt (10 rounds)
+- JWT access + refresh token rotation
+- Rate limiting 100 requests/phút
+- Validation lớp DTO + Prisma guard SQL injection
+- Bộ lọc HTTP exception & interceptor chuẩn hóa response
 
-## Environment Variables
+## Environment Variables (tham khảo `.env.example`)
 
-See `.env.example` for all available environment variables:
-
-- `NODE_ENV` - Environment (development/production)
-- `PORT` - Server port (default: 3000)
-- `DATABASE_URL` - PostgreSQL connection string
-- `JWT_SECRET` - JWT secret key
-- `JWT_EXPIRES_IN` - Access token expiration (default: 15m)
-- `REFRESH_TOKEN_SECRET` - Refresh token secret
-- `REFRESH_TOKEN_EXPIRES_IN` - Refresh token expiration (default: 7d)
-- `BCRYPT_ROUNDS` - Bcrypt salt rounds (default: 10)
-- `CORS_ORIGIN` - Allowed CORS origins
+- `PORT`, `DATABASE_URL`
+- `JWT_SECRET`, `JWT_EXPIRES_IN`
+- `REFRESH_TOKEN_SECRET`, `REFRESH_TOKEN_EXPIRES_IN`
+- `BCRYPT_ROUNDS`
+- `CORS_ORIGIN`
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License.
