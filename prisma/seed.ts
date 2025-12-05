@@ -8,10 +8,12 @@ async function main() {
 
   // 1) Create Admin
   const adminEmail = 'admin@hcmut.com';
-  const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+  let admin = await prisma.user.findUnique({
+    where: { email: adminEmail },
+  });
   if (!admin) {
     const hash = await bcrypt.hash('Admin123!', 10);
-    await prisma.user.create({
+    admin = await prisma.user.create({
       data: {
         username: 'admin',
         email: adminEmail,
@@ -67,6 +69,7 @@ async function main() {
       product = await prisma.product.create({
         data: {
           name: p.name,
+          userId: admin?.id,
           description: p.description,
           basePrice: p.basePrice,
           isActive: true,
@@ -85,6 +88,7 @@ async function main() {
     color?: string;
     density?: number;
     priceFactor?: number;
+    pricePerMm3?: number;
   };
 
   const materials: SeedMaterial[] = [
@@ -93,36 +97,42 @@ async function main() {
       color: 'White',
       density: 1.25,
       priceFactor: 1.0,
+      pricePerMm3: 110,
     },
     {
       name: 'PLA',
       color: 'Black',
       density: 1.25,
       priceFactor: 1.0,
+      pricePerMm3: 100,
     },
     {
       name: 'PLA',
       color: 'Red',
       density: 1.25,
       priceFactor: 1.1,
+      pricePerMm3: 120,
     },
     {
       name: 'ABS',
       color: 'White',
       density: 1.04,
       priceFactor: 1.2,
+      pricePerMm3: 100,
     },
     {
       name: 'ABS',
       color: 'Black',
       density: 1.04,
       priceFactor: 1.2,
+      pricePerMm3: 110,
     },
     {
       name: 'PETG',
       color: 'Transparent',
       density: 1.27,
       priceFactor: 1.3,
+      pricePerMm3: 140,
     },
   ];
 

@@ -38,11 +38,25 @@ export class ProductsController {
     type: Boolean,
     description: 'Filter by active status',
   })
+  @ApiQuery({
+    name: 'userId',
+    required: false,
+    type: String,
+    description: 'Filter by user ID',
+  })
+  @ApiQuery({
+    name: 'userRole',
+    required: false,
+    type: String,
+    description: 'Filter by user role (CUSTOMER or ADMIN)',
+  })
   findAll(
     @Query('isActive', new ParseBoolPipe({ optional: true }))
     isActive?: boolean,
+    @Query('userId') userId?: string,
+    @Query('userRole') userRole?: string,
   ) {
-    return this.productsService.findAll(isActive);
+    return this.productsService.findAll(isActive, userId, userRole);
   }
 
   @Public()
@@ -54,29 +68,26 @@ export class ProductsController {
 
   @Post()
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create a new product (Admin only)' })
+  @ApiOperation({ summary: 'Create a new product' })
   create(@Req() req, @Body() createProductDto: CreateProductDto) {
-    const userRole = req.user?.role;
-    return this.productsService.create(createProductDto, userRole);
+    return this.productsService.create(createProductDto, req.user);
   }
 
   @Patch(':id')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Update a product (Admin only)' })
+  @ApiOperation({ summary: 'Update a product' })
   update(
     @Req() req,
     @Param('id') id: string,
     @Body() updateProductDto: UpdateProductDto,
   ) {
-    const userRole = req.user?.role;
-    return this.productsService.update(id, updateProductDto, userRole);
+    return this.productsService.update(id, updateProductDto, req.user);
   }
 
   @Delete(':id')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Delete a product (Admin only)' })
+  @ApiOperation({ summary: 'Delete a product' })
   delete(@Req() req, @Param('id') id: string) {
-    const userRole = req.user?.role;
-    return this.productsService.delete(id, userRole);
+    return this.productsService.delete(id, req.user);
   }
 }

@@ -169,6 +169,16 @@ export const ERROR_MESSAGES = {
     UPDATED_SUCCESS: 'Material updated successfully.',
     DELETED_SUCCESS: 'Material deleted successfully.',
   },
+  PRINT_FILE: {
+    NOT_FOUND: 'Print file not found.',
+    CREATE_FAILED: 'Failed to upload print file. Please try again.',
+    DELETE_FAILED: 'Failed to delete print file. Please try again.',
+    INVALID_FILE_TYPE: 'Invalid file type. Only STL files are supported.',
+    FILE_TOO_LARGE: 'File size exceeds maximum limit of 50MB.',
+    PARSE_ERROR: 'Failed to parse STL file. Please ensure the file is valid.',
+    CREATED_SUCCESS: 'Print file uploaded successfully.',
+    DELETED_SUCCESS: 'Print file deleted successfully.',
+  },
   VALIDATION: {
     REQUIRED_FIELD: 'This field is required.',
     INVALID_EMAIL: 'Please enter a valid email address.',

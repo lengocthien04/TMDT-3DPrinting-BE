@@ -6,6 +6,7 @@ import {
   Min,
   IsOptional,
   IsUUID,
+  IsNumber,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -29,6 +30,16 @@ export class UpdateVariantDto {
   @MinLength(1)
   @MaxLength(100)
   name?: string;
+
+  @ApiPropertyOptional({
+    description: 'Volume in mm3',
+    example: 2000.75,
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  volume?: number;
 
   @ApiPropertyOptional({
     description: 'Stock quantity',

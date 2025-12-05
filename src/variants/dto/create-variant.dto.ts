@@ -5,6 +5,8 @@ import {
   MaxLength,
   IsInt,
   Min,
+  IsNumber,
+  IsOptional,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -33,6 +35,17 @@ export class CreateVariantDto {
   @MinLength(1)
   @MaxLength(100)
   name: string;
+
+  @ApiProperty({
+    description: 'Volume in mm3',
+    example: 1500.5,
+    minimum: 0,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  volume?: number;
 
   @ApiProperty({
     description: 'Stock quantity',

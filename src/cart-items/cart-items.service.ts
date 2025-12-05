@@ -11,16 +11,19 @@ import { PrismaService } from '../database/prisma.service';
 type CreateCartItemPayload = {
   variantId: string;
   quantity: number;
+  note?: string;
 };
 
-type UpdateCartItemPayload = Partial<Pick<CreateCartItemPayload, 'quantity'>>;
+type UpdateCartItemPayload = Partial<
+  Pick<CreateCartItemPayload, 'quantity' | 'note'>
+>;
 
 @Injectable()
 export class CartItemsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: string, payload: CreateCartItemPayload) {
-    const { variantId, quantity } = payload;
+    const { variantId, quantity, note } = payload;
 
     if (!quantity || quantity < 1) {
       throw new BadRequestException(ERROR_MESSAGES.CART_ITEM.INVALID_QUANTITY);
@@ -53,15 +56,30 @@ export class CartItemsService {
     }
 
     const cartItem = await this.prisma.cartItem.create({
-      data: { cartId: cart.id, variantId, quantity },
+      data: { cartId: cart.id, variantId, quantity, note },
       include: {
         variant: {
           select: {
             id: true,
             name: true,
             stock: true,
-            product: { select: { id: true, name: true, basePrice: true } },
-            material: { select: { id: true, name: true, priceFactor: true } },
+            volume: true,
+            product: {
+              select: {
+                id: true,
+                name: true,
+                basePrice: true,
+                printFile: { select: { volume: true } },
+              },
+            },
+            material: {
+              select: {
+                id: true,
+                name: true,
+                priceFactor: true,
+                pricePerMm3: true,
+              },
+            },
           },
         },
       },
@@ -71,9 +89,13 @@ export class CartItemsService {
       ...cartItem,
       variant: {
         ...cartItem.variant,
-        price:
-          Number(cartItem.variant.product.basePrice) *
-          (cartItem.variant.material.priceFactor ?? 1.0),
+        price: this.calculatePrice(
+          Number(cartItem.variant.product.basePrice),
+          cartItem.variant.volume,
+          cartItem.variant.product.printFile?.volume,
+          cartItem.variant.material.priceFactor,
+          cartItem.variant.material.pricePerMm3,
+        ),
       },
     };
   }
@@ -97,24 +119,52 @@ export class CartItemsService {
             id: true,
             name: true,
             stock: true,
-            product: { select: { id: true, name: true, basePrice: true } },
-            material: { select: { id: true, name: true, priceFactor: true } },
+            volume: true,
+            product: {
+              select: {
+                id: true,
+                name: true,
+                basePrice: true,
+                printFile: { select: { volume: true } },
+              },
+            },
+            material: {
+              select: {
+                id: true,
+                name: true,
+                priceFactor: true,
+                pricePerMm3: true,
+              },
+            },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    // Calculate price for each variant
-    return items.map((item) => ({
-      ...item,
-      variant: {
-        ...item.variant,
-        price:
-          Number(item.variant.product.basePrice) *
-          (item.variant.material.priceFactor ?? 1.0),
-      },
-    }));
+    // Calculate price for each variant using volume ratio
+    return items.map((item) => {
+      const printFileVolume = item.variant.product.printFile?.volume;
+      const variantVolume = item.variant.volume;
+      const volumeRatio =
+        printFileVolume && variantVolume
+          ? variantVolume / printFileVolume
+          : 1.0;
+
+      return {
+        ...item,
+        variant: {
+          ...item.variant,
+          price: this.calculatePrice(
+            Number(item.variant.product.basePrice),
+            item.variant.volume,
+            item.variant.product.printFile?.volume,
+            item.variant.material.priceFactor,
+            item.variant.material.pricePerMm3,
+          ),
+        },
+      };
+    });
   }
 
   async update(userId: string, itemId: string, dto: UpdateCartItemPayload) {
@@ -135,15 +185,33 @@ export class CartItemsService {
 
     const updated = await this.prisma.cartItem.update({
       where: { id: itemId },
-      data: { quantity: dto.quantity ?? existing.quantity },
+      data: {
+        quantity: dto.quantity ?? existing.quantity,
+        note: dto.note !== undefined ? dto.note : existing.note,
+      },
       include: {
         variant: {
           select: {
             id: true,
             name: true,
             stock: true,
-            product: { select: { id: true, name: true, basePrice: true } },
-            material: { select: { id: true, name: true, priceFactor: true } },
+            volume: true,
+            product: {
+              select: {
+                id: true,
+                name: true,
+                basePrice: true,
+                printFile: { select: { volume: true } },
+              },
+            },
+            material: {
+              select: {
+                id: true,
+                name: true,
+                priceFactor: true,
+                pricePerMm3: true,
+              },
+            },
           },
         },
       },
@@ -153,9 +221,13 @@ export class CartItemsService {
       ...updated,
       variant: {
         ...updated.variant,
-        price:
-          Number(updated.variant.product.basePrice) *
-          (updated.variant.material.priceFactor ?? 1.0),
+        price: this.calculatePrice(
+          Number(updated.variant.product.basePrice),
+          updated.variant.volume,
+          updated.variant.product.printFile?.volume,
+          updated.variant.material.priceFactor,
+          updated.variant.material.pricePerMm3,
+        ),
       },
     };
   }
@@ -175,5 +247,23 @@ export class CartItemsService {
     await this.prisma.cartItem.delete({ where: { id: itemId } });
 
     return { message: ERROR_MESSAGES.CART_ITEM.DELETED_SUCCESS };
+  }
+
+  private calculatePrice(
+    basePrice: number,
+    variantVolume?: number | null,
+    printFileVolume?: number | null,
+    materialPriceFactor?: number | null,
+    materialPricePerMm3?: number | null,
+  ): number {
+    if (basePrice === 0 && materialPricePerMm3 && variantVolume) {
+      return materialPricePerMm3 * variantVolume;
+    } else {
+      const volumeRatio =
+        printFileVolume && variantVolume
+          ? variantVolume / printFileVolume
+          : 1.0;
+      return basePrice * volumeRatio * (materialPriceFactor ?? 1.0);
+    }
   }
 }

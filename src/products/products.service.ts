@@ -15,6 +15,7 @@ type CreateProductPayload = {
   isActive?: boolean;
   images?: string[];
   tags?: string[];
+  printFileId?: string;
 };
 
 type UpdateProductPayload = Partial<CreateProductPayload>;
@@ -23,12 +24,23 @@ type UpdateProductPayload = Partial<CreateProductPayload>;
 export class ProductsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(isActive?: boolean) {
-    const where = isActive !== undefined ? { isActive } : {};
+  async findAll(isActive?: boolean, userId?: string, userRole?: string) {
+    const filter: any = {};
+    if (isActive !== undefined) filter.isActive = isActive;
+    if (userId) filter.userId = userId;
+    if (userRole) filter.user = { role: userRole };
 
     const products = await this.prisma.product.findMany({
-      where,
+      where: filter,
       include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            profile: true,
+          },
+        },
         variants: {
           include: {
             material: {
@@ -37,6 +49,7 @@ export class ProductsService {
                 name: true,
                 color: true,
                 priceFactor: true,
+                pricePerMm3: true,
               },
             },
           },
@@ -44,11 +57,10 @@ export class ProductsService {
         images: {
           select: { id: true, url: true, altText: true },
         },
+        printFile: true,
         tags: {
           include: {
-            tag: {
-              select: { id: true, name: true },
-            },
+            tag: { select: { id: true, name: true } },
           },
         },
         _count: {
@@ -58,9 +70,17 @@ export class ProductsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Transform tags to return only tag data without productId/tagId
+    // Transform tags and flatten user profile
     return products.map((product) => ({
       ...product,
+      user: product.user
+        ? {
+            id: product.user.id,
+            email: product.user.email,
+            role: product.user.role,
+            fullName: product.user.profile?.fullName || null,
+          }
+        : null,
       tags: product.tags.map((pt) => pt.tag),
     }));
   }
@@ -69,6 +89,14 @@ export class ProductsService {
     const product = await this.prisma.product.findUnique({
       where: { id },
       include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            profile: true,
+          },
+        },
         variants: {
           include: {
             material: {
@@ -78,6 +106,7 @@ export class ProductsService {
                 color: true,
                 density: true,
                 priceFactor: true,
+                pricePerMm3: true,
               },
             },
           },
@@ -90,6 +119,7 @@ export class ProductsService {
             altText: true,
           },
         },
+        printFile: true,
         reviews: {
           include: {
             user: {
@@ -110,9 +140,7 @@ export class ProductsService {
               select: {
                 id: true,
                 username: true,
-                profile: {
-                  select: { fullName: true },
-                },
+                profile: { select: { fullName: true } },
               },
             },
           },
@@ -120,9 +148,7 @@ export class ProductsService {
         },
         tags: {
           include: {
-            tag: {
-              select: { id: true, name: true },
-            },
+            tag: { select: { id: true, name: true } },
           },
         },
       },
@@ -132,9 +158,17 @@ export class ProductsService {
       throw new NotFoundException(ERROR_MESSAGES.PRODUCT.NOT_FOUND);
     }
 
-    // Calculate price for each variant
-    const productWithPrices = {
+    // Calculate price for each variant and flatten user profile
+    return {
       ...product,
+      user: product.user
+        ? {
+            id: product.user.id,
+            email: product.user.email,
+            role: product.user.role,
+            fullName: product.user.profile?.fullName || null,
+          }
+        : null,
       variants: product.variants.map((variant) => ({
         ...variant,
         price:
@@ -142,16 +176,35 @@ export class ProductsService {
       })),
       tags: product.tags.map((pt) => pt.tag),
     };
-
-    return productWithPrices;
   }
 
-  async create(payload: CreateProductPayload, userRole?: UserRole) {
-    if (userRole !== UserRole.ADMIN) {
-      throw new ForbiddenException(ERROR_MESSAGES.PRODUCT.PERMISSION_DENIED);
-    }
+  async create(payload: CreateProductPayload, user: any) {
+    const {
+      name,
+      description,
+      basePrice,
+      isActive,
+      images,
+      tags,
+      printFileId,
+    } = payload;
 
-    const { name, description, basePrice, isActive, images, tags } = payload;
+    // Validate print file exists if provided
+    if (printFileId) {
+      const printFile = await this.prisma.printFile.findUnique({
+        where: { id: printFileId },
+      });
+
+      if (!printFile) {
+        throw new BadRequestException('Print file not found.');
+      }
+
+      if (printFile.productId) {
+        throw new BadRequestException(
+          'Print file is already linked to another product.',
+        );
+      }
+    }
 
     // Validate all tags exist
     if (tags?.length) {
@@ -166,6 +219,7 @@ export class ProductsService {
 
     const product = await this.prisma.product.create({
       data: {
+        userId: user?.sub,
         name,
         description,
         basePrice,
@@ -190,11 +244,18 @@ export class ProductsService {
       include: {
         variants: true,
         images: true,
-        tags: {
-          include: { tag: true },
-        },
+        printFile: true,
+        tags: { include: { tag: true } },
       },
     });
+
+    // Link print file if provided
+    if (printFileId) {
+      await this.prisma.printFile.update({
+        where: { id: printFileId },
+        data: { productId: product.id },
+      });
+    }
 
     return {
       ...product,
@@ -202,25 +263,48 @@ export class ProductsService {
     };
   }
 
-  async update(id: string, dto: UpdateProductPayload, userRole?: UserRole) {
-    if (userRole !== UserRole.ADMIN) {
-      throw new ForbiddenException(ERROR_MESSAGES.PRODUCT.PERMISSION_DENIED);
-    }
-
+  async update(id: string, dto: UpdateProductPayload, user: any) {
     const existing = await this.prisma.product.findUnique({
       where: { id },
-      include: {
-        images: {
-          select: { id: true, url: true },
-        },
-        tags: {
-          select: { tagId: true },
-        },
+      select: {
+        id: true,
+        userId: true,
+        name: true,
+        description: true,
+        basePrice: true,
+        isActive: true,
+        images: { select: { id: true, url: true } },
+        tags: { select: { tagId: true } },
+        printFile: { select: { id: true } },
       },
     });
 
     if (!existing) {
       throw new NotFoundException(ERROR_MESSAGES.PRODUCT.NOT_FOUND);
+    }
+
+    // Check if user is admin or owner
+    if (user?.role !== UserRole.ADMIN && existing.userId !== user?.sub) {
+      throw new ForbiddenException(ERROR_MESSAGES.PRODUCT.PERMISSION_DENIED);
+    }
+
+    // Validate print file if provided
+    if (dto.printFileId !== undefined) {
+      if (dto.printFileId) {
+        const printFile = await this.prisma.printFile.findUnique({
+          where: { id: dto.printFileId },
+        });
+
+        if (!printFile) {
+          throw new BadRequestException('Print file not found.');
+        }
+
+        if (printFile.productId && printFile.productId !== id) {
+          throw new BadRequestException(
+            'Print file is already linked to another product.',
+          );
+        }
+      }
     }
 
     // Validate all new tags exist
@@ -302,6 +386,30 @@ export class ProductsService {
       }
     }
 
+    // Handle print file updates
+    if (dto.printFileId !== undefined) {
+      const currentPrintFileId = existing.printFile?.id;
+
+      // If changing print file
+      if (currentPrintFileId !== dto.printFileId) {
+        // Unlink old print file
+        if (currentPrintFileId) {
+          await this.prisma.printFile.update({
+            where: { id: currentPrintFileId },
+            data: { productId: null },
+          });
+        }
+
+        // Link new print file
+        if (dto.printFileId) {
+          await this.prisma.printFile.update({
+            where: { id: dto.printFileId },
+            data: { productId: id },
+          });
+        }
+      }
+    }
+
     const updated = await this.prisma.product.update({
       where: { id },
       data: {
@@ -319,11 +427,13 @@ export class ProductsService {
                 name: true,
                 color: true,
                 priceFactor: true,
+                pricePerMm3: true,
               },
             },
           },
         },
         images: true,
+        printFile: true,
         tags: {
           include: { tag: true },
         },
@@ -336,17 +446,22 @@ export class ProductsService {
     };
   }
 
-  async delete(id: string, userRole?: UserRole) {
-    if (userRole !== UserRole.ADMIN) {
-      throw new ForbiddenException(ERROR_MESSAGES.PRODUCT.PERMISSION_DENIED);
-    }
-
+  async delete(id: string, user: any) {
     const existing = await this.prisma.product.findUnique({
       where: { id },
+      select: {
+        id: true,
+        userId: true,
+      },
     });
 
     if (!existing) {
       throw new NotFoundException(ERROR_MESSAGES.PRODUCT.NOT_FOUND);
+    }
+
+    // Check if user is admin or owner
+    if (user?.role !== UserRole.ADMIN && existing.userId !== user?.sub) {
+      throw new ForbiddenException(ERROR_MESSAGES.PRODUCT.PERMISSION_DENIED);
     }
 
     await this.prisma.product.delete({

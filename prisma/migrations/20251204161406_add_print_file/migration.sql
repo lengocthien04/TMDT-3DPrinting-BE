@@ -73,9 +73,10 @@ CREATE TABLE "refresh_tokens" (
 -- CreateTable
 CREATE TABLE "products" (
     "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
     "name" VARCHAR(255) NOT NULL,
     "description" TEXT,
-    "base_price" DECIMAL(12,2) NOT NULL,
+    "base_price" DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
@@ -87,8 +88,9 @@ CREATE TABLE "products" (
 CREATE TABLE "variants" (
     "id" TEXT NOT NULL,
     "product_id" TEXT NOT NULL,
+    "material_id" TEXT NOT NULL,
     "name" VARCHAR(100) NOT NULL,
-    "price" DECIMAL(12,2) NOT NULL,
+    "volume" DOUBLE PRECISION,
     "stock" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -98,24 +100,29 @@ CREATE TABLE "variants" (
 -- CreateTable
 CREATE TABLE "materials" (
     "id" TEXT NOT NULL,
-    "product_id" TEXT NOT NULL,
     "name" VARCHAR(100) NOT NULL,
     "color" VARCHAR(50),
     "density" DOUBLE PRECISION,
-    "priceFactor" DOUBLE PRECISION DEFAULT 1.0,
+    "price_per_mm3" DOUBLE PRECISION,
+    "price_factor" DOUBLE PRECISION DEFAULT 1.0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "materials_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "inventories" (
+CREATE TABLE "print_files" (
     "id" TEXT NOT NULL,
-    "product_id" TEXT NOT NULL,
-    "quantity" INTEGER NOT NULL DEFAULT 0,
-    "updated_at" TIMESTAMP(3) NOT NULL,
+    "product_id" TEXT,
+    "url" VARCHAR(500) NOT NULL,
+    "type" VARCHAR(50) NOT NULL,
+    "volume" DOUBLE PRECISION,
+    "height" DOUBLE PRECISION,
+    "width" DOUBLE PRECISION,
+    "depth" DOUBLE PRECISION,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "inventories_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "print_files_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -269,10 +276,13 @@ CREATE UNIQUE INDEX "refresh_tokens_token_key" ON "refresh_tokens"("token");
 CREATE INDEX "refresh_tokens_user_id_idx" ON "refresh_tokens"("user_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "inventories_product_id_key" ON "inventories"("product_id");
+CREATE UNIQUE INDEX "print_files_product_id_key" ON "print_files"("product_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "tags_name_key" ON "tags"("name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "carts_user_id_key" ON "carts"("user_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "cart_items_cart_id_variant_id_key" ON "cart_items"("cart_id", "variant_id");
@@ -299,13 +309,16 @@ ALTER TABLE "Address" ADD CONSTRAINT "Address_user_id_fkey" FOREIGN KEY ("user_i
 ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "products" ADD CONSTRAINT "products_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "variants" ADD CONSTRAINT "variants_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "materials" ADD CONSTRAINT "materials_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "variants" ADD CONSTRAINT "variants_material_id_fkey" FOREIGN KEY ("material_id") REFERENCES "materials"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "inventories" ADD CONSTRAINT "inventories_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "print_files" ADD CONSTRAINT "print_files_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "media_assets" ADD CONSTRAINT "media_assets_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "products"("id") ON DELETE CASCADE ON UPDATE CASCADE;

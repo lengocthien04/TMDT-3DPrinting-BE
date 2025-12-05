@@ -13,6 +13,7 @@ type CreateMaterialPayload = {
   color?: string;
   density?: number;
   priceFactor?: number;
+  pricePerMm3?: number;
 };
 
 type UpdateMaterialPayload = Partial<CreateMaterialPayload>;
@@ -44,7 +45,7 @@ export class MaterialsService {
       throw new ForbiddenException(ERROR_MESSAGES.MATERIAL.PERMISSION_DENIED);
     }
 
-    const { name, color, density, priceFactor } = payload;
+    const { name, color, density, priceFactor, pricePerMm3 } = payload;
 
     // Check for duplicate name
     const existing = await this.prisma.material.findFirst({
@@ -61,6 +62,7 @@ export class MaterialsService {
         color,
         density,
         priceFactor,
+        pricePerMm3,
       },
     });
 
@@ -101,6 +103,7 @@ export class MaterialsService {
         color: dto.color ?? existing.color,
         density: dto.density ?? existing.density,
         priceFactor: dto.priceFactor ?? existing.priceFactor,
+        pricePerMm3: dto.pricePerMm3 ?? existing.pricePerMm3,
       },
     });
 
