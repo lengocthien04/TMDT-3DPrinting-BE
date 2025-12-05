@@ -30,24 +30,6 @@ export class CartsService {
     };
   }
 
-  async findOne(userId: string) {
-    const cart = await this.prisma.cart.findUnique({
-      where: { userId },
-    });
-
-    if (!cart) {
-      throw new NotFoundException(ERROR_MESSAGES.CART.NOT_FOUND);
-    }
-
-    // Get items using cart-items service
-    const items = await this.cartItemsService.findByUser(userId);
-
-    return {
-      ...cart,
-      items,
-    };
-  }
-
   async delete(userId: string) {
     const cart = await this.prisma.cart.findUnique({
       where: { userId },

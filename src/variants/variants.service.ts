@@ -12,11 +12,12 @@ type CreateVariantPayload = {
   productId: string;
   materialId: string;
   name: string;
+  volume?: number;
   stock: number;
 };
 
 type UpdateVariantPayload = Partial<
-  Pick<CreateVariantPayload, 'materialId' | 'name' | 'stock'>
+  Pick<CreateVariantPayload, 'materialId' | 'name' | 'volume' | 'stock'>
 >;
 
 @Injectable()
@@ -31,6 +32,7 @@ export class VariantsService {
             id: true,
             name: true,
             basePrice: true,
+            printFile: { select: { volume: true } },
           },
         },
         material: {
@@ -39,18 +41,23 @@ export class VariantsService {
             name: true,
             color: true,
             priceFactor: true,
+            pricePerMm3: true,
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    // Calculate price for each variant
+    // Calculate price for each variant using volume ratio
     return variants.map((variant) => ({
       ...variant,
-      price:
-        Number(variant.product.basePrice) *
-        (variant.material.priceFactor ?? 1.0),
+      price: this.calculatePrice(
+        Number(variant.product.basePrice),
+        variant.volume,
+        variant.product.printFile?.volume,
+        variant.material.priceFactor,
+        variant.material.pricePerMm3,
+      ),
     }));
   }
 
@@ -67,6 +74,7 @@ export class VariantsService {
             id: true,
             name: true,
             basePrice: true,
+            printFile: { select: { volume: true } },
           },
         },
         material: {
@@ -75,18 +83,23 @@ export class VariantsService {
             name: true,
             color: true,
             priceFactor: true,
+            pricePerMm3: true,
           },
         },
       },
       orderBy: { name: 'asc' },
     });
 
-    // Calculate price for each variant
+    // Calculate price for each variant using volume ratio
     return variants.map((variant) => ({
       ...variant,
-      price:
-        Number(variant.product.basePrice) *
-        (variant.material.priceFactor ?? 1.0),
+      price: this.calculatePrice(
+        Number(variant.product.basePrice),
+        variant.volume,
+        variant.product.printFile?.volume,
+        variant.material.priceFactor,
+        variant.material.pricePerMm3,
+      ),
     }));
   }
 
@@ -100,6 +113,7 @@ export class VariantsService {
             name: true,
             description: true,
             basePrice: true,
+            printFile: { select: { volume: true } },
           },
         },
         material: {
@@ -109,6 +123,7 @@ export class VariantsService {
             color: true,
             density: true,
             priceFactor: true,
+            pricePerMm3: true,
           },
         },
       },
@@ -118,12 +133,15 @@ export class VariantsService {
       throw new NotFoundException(ERROR_MESSAGES.VARIANT.NOT_FOUND);
     }
 
-    // Calculate price
     return {
       ...variant,
-      price:
-        Number(variant.product.basePrice) *
-        (variant.material.priceFactor ?? 1.0),
+      price: this.calculatePrice(
+        Number(variant.product.basePrice),
+        variant.volume,
+        variant.product.printFile?.volume,
+        variant.material.priceFactor,
+        variant.material.pricePerMm3,
+      ),
     };
   }
 
@@ -132,7 +150,7 @@ export class VariantsService {
       throw new ForbiddenException(ERROR_MESSAGES.VARIANT.PERMISSION_DENIED);
     }
 
-    const { productId, materialId, name, stock } = payload;
+    const { productId, materialId, name, volume, stock } = payload;
 
     // Verify product exists
     const product = await this.prisma.product.findUnique({
@@ -159,6 +177,7 @@ export class VariantsService {
         productId,
         materialId,
         name,
+        volume,
         stock,
       },
       include: {
@@ -167,6 +186,7 @@ export class VariantsService {
             id: true,
             name: true,
             basePrice: true,
+            printFile: { select: { volume: true } },
           },
         },
         material: {
@@ -175,17 +195,21 @@ export class VariantsService {
             name: true,
             color: true,
             priceFactor: true,
+            pricePerMm3: true,
           },
         },
       },
     });
 
-    // Calculate price
     return {
       ...variant,
-      price:
-        Number(variant.product.basePrice) *
-        (variant.material.priceFactor ?? 1.0),
+      price: this.calculatePrice(
+        Number(variant.product.basePrice),
+        variant.volume,
+        variant.product.printFile?.volume,
+        variant.material.priceFactor,
+        variant.material.pricePerMm3,
+      ),
     };
   }
 
@@ -234,6 +258,7 @@ export class VariantsService {
       data: {
         materialId: dto.materialId ?? existing.materialId,
         name: dto.name ?? existing.name,
+        volume: dto.volume !== undefined ? dto.volume : existing.volume,
         stock: dto.stock ?? existing.stock,
       },
       include: {
@@ -242,6 +267,7 @@ export class VariantsService {
             id: true,
             name: true,
             basePrice: true,
+            printFile: { select: { volume: true } },
           },
         },
         material: {
@@ -250,17 +276,21 @@ export class VariantsService {
             name: true,
             color: true,
             priceFactor: true,
+            pricePerMm3: true,
           },
         },
       },
     });
 
-    // Calculate price
     return {
       ...updated,
-      price:
-        Number(updated.product.basePrice) *
-        (updated.material.priceFactor ?? 1.0),
+      price: this.calculatePrice(
+        Number(updated.product.basePrice),
+        updated.volume,
+        updated.product.printFile?.volume,
+        updated.material.priceFactor,
+        updated.material.pricePerMm3,
+      ),
     };
   }
 
@@ -282,5 +312,23 @@ export class VariantsService {
     });
 
     return { message: ERROR_MESSAGES.VARIANT.DELETED_SUCCESS };
+  }
+
+  private calculatePrice(
+    basePrice: number,
+    variantVolume?: number | null,
+    printFileVolume?: number | null,
+    materialPriceFactor?: number | null,
+    materialPricePerMm3?: number | null,
+  ): number {
+    if (basePrice === 0 && materialPricePerMm3 && variantVolume) {
+      return materialPricePerMm3 * variantVolume;
+    } else {
+      const volumeRatio =
+        printFileVolume && variantVolume
+          ? variantVolume / printFileVolume
+          : 1.0;
+      return basePrice * volumeRatio * (materialPriceFactor ?? 1.0);
+    }
   }
 }

@@ -60,8 +60,23 @@ export class CartItemsService {
             id: true,
             name: true,
             stock: true,
-            product: { select: { id: true, name: true, basePrice: true } },
-            material: { select: { id: true, name: true, priceFactor: true } },
+            volume: true,
+            product: {
+              select: {
+                id: true,
+                name: true,
+                basePrice: true,
+                printFile: { select: { volume: true } },
+              },
+            },
+            material: {
+              select: {
+                id: true,
+                name: true,
+                priceFactor: true,
+                pricePerMm3: true,
+              },
+            },
           },
         },
       },
@@ -71,9 +86,13 @@ export class CartItemsService {
       ...cartItem,
       variant: {
         ...cartItem.variant,
-        price:
-          Number(cartItem.variant.product.basePrice) *
-          (cartItem.variant.material.priceFactor ?? 1.0),
+        price: this.calculatePrice(
+          Number(cartItem.variant.product.basePrice),
+          cartItem.variant.volume,
+          cartItem.variant.product.printFile?.volume,
+          cartItem.variant.material.priceFactor,
+          cartItem.variant.material.pricePerMm3,
+        ),
       },
     };
   }
@@ -97,24 +116,52 @@ export class CartItemsService {
             id: true,
             name: true,
             stock: true,
-            product: { select: { id: true, name: true, basePrice: true } },
-            material: { select: { id: true, name: true, priceFactor: true } },
+            volume: true,
+            product: {
+              select: {
+                id: true,
+                name: true,
+                basePrice: true,
+                printFile: { select: { volume: true } },
+              },
+            },
+            material: {
+              select: {
+                id: true,
+                name: true,
+                priceFactor: true,
+                pricePerMm3: true,
+              },
+            },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    // Calculate price for each variant
-    return items.map((item) => ({
-      ...item,
-      variant: {
-        ...item.variant,
-        price:
-          Number(item.variant.product.basePrice) *
-          (item.variant.material.priceFactor ?? 1.0),
-      },
-    }));
+    // Calculate price for each variant using volume ratio
+    return items.map((item) => {
+      const printFileVolume = item.variant.product.printFile?.volume;
+      const variantVolume = item.variant.volume;
+      const volumeRatio =
+        printFileVolume && variantVolume
+          ? variantVolume / printFileVolume
+          : 1.0;
+
+      return {
+        ...item,
+        variant: {
+          ...item.variant,
+          price: this.calculatePrice(
+            Number(item.variant.product.basePrice),
+            item.variant.volume,
+            item.variant.product.printFile?.volume,
+            item.variant.material.priceFactor,
+            item.variant.material.pricePerMm3,
+          ),
+        },
+      };
+    });
   }
 
   async update(userId: string, itemId: string, dto: UpdateCartItemPayload) {
@@ -142,8 +189,23 @@ export class CartItemsService {
             id: true,
             name: true,
             stock: true,
-            product: { select: { id: true, name: true, basePrice: true } },
-            material: { select: { id: true, name: true, priceFactor: true } },
+            volume: true,
+            product: {
+              select: {
+                id: true,
+                name: true,
+                basePrice: true,
+                printFile: { select: { volume: true } },
+              },
+            },
+            material: {
+              select: {
+                id: true,
+                name: true,
+                priceFactor: true,
+                pricePerMm3: true,
+              },
+            },
           },
         },
       },
@@ -153,9 +215,13 @@ export class CartItemsService {
       ...updated,
       variant: {
         ...updated.variant,
-        price:
-          Number(updated.variant.product.basePrice) *
-          (updated.variant.material.priceFactor ?? 1.0),
+        price: this.calculatePrice(
+          Number(updated.variant.product.basePrice),
+          updated.variant.volume,
+          updated.variant.product.printFile?.volume,
+          updated.variant.material.priceFactor,
+          updated.variant.material.pricePerMm3,
+        ),
       },
     };
   }
@@ -175,5 +241,23 @@ export class CartItemsService {
     await this.prisma.cartItem.delete({ where: { id: itemId } });
 
     return { message: ERROR_MESSAGES.CART_ITEM.DELETED_SUCCESS };
+  }
+
+  private calculatePrice(
+    basePrice: number,
+    variantVolume?: number | null,
+    printFileVolume?: number | null,
+    materialPriceFactor?: number | null,
+    materialPricePerMm3?: number | null,
+  ): number {
+    if (basePrice === 0 && materialPricePerMm3 && variantVolume) {
+      return materialPricePerMm3 * variantVolume;
+    } else {
+      const volumeRatio =
+        printFileVolume && variantVolume
+          ? variantVolume / printFileVolume
+          : 1.0;
+      return basePrice * volumeRatio * (materialPriceFactor ?? 1.0);
+    }
   }
 }

@@ -50,4 +50,14 @@ export class UpdateMaterialDto {
   @IsNumber()
   @Min(0)
   priceFactor?: number;
+
+  @ApiPropertyOptional({
+    description: 'Price per mm3 volume',
+    example: 100,
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  pricePerMm3?: number;
 }

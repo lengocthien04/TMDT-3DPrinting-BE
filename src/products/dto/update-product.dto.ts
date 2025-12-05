@@ -82,4 +82,13 @@ export class UpdateProductDto {
   @IsUUID('4', { each: true })
   @IsOptional()
   tags?: string[];
+
+  @ApiProperty({
+    description: 'Print file ID to link to this product',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  @IsUUID('4')
+  @IsOptional()
+  printFileId?: string;
 }

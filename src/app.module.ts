@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { ConfigModule } from './config/config.module';
 import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
@@ -14,6 +16,7 @@ import { QnasModule } from './qnas/qnas.module';
 import { MaterialsModule } from './materials/materials.module';
 import { VariantsModule } from './variants/variants.module';
 import { ProductsModule } from './products/products.module';
+import { PrintFilesModule } from './print-files/print-files.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -22,6 +25,11 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
   imports: [
     ConfigModule,
     DatabaseModule,
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '../..', 'files'),
+      serveRoot: '/files',
+      serveStaticOptions: { index: false },
+    }),
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
@@ -39,6 +47,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     MaterialsModule,
     VariantsModule,
     ProductsModule,
+    PrintFilesModule,
   ],
   providers: [
     {
