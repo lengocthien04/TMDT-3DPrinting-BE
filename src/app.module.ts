@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
@@ -17,6 +17,11 @@ import { MaterialsModule } from './materials/materials.module';
 import { VariantsModule } from './variants/variants.module';
 import { ProductsModule } from './products/products.module';
 import { PrintFilesModule } from './print-files/print-files.module';
+import { OrderModule } from './order/order.module';
+import { OrderItemsModule } from './order-items/order-items.module';
+import { ShipmentModule } from './shipment/shipment.module';
+import { PaymentModule } from './payment/payment.module';
+import { VouchersModule } from './vouchers/vouchers.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -48,6 +53,11 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     VariantsModule,
     ProductsModule,
     PrintFilesModule,
+    OrderModule,
+    OrderItemsModule,
+    ShipmentModule,
+    PaymentModule,
+    VouchersModule,
   ],
   providers: [
     {
