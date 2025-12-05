@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -14,6 +15,8 @@ export class VouchersService {
 
   async create(dto: CreateVoucherDto, currentUser: JwtPayload) {
     this.assertAdmin(currentUser);
+    this.ensureVoucherValidity(dto.discount, dto.expiresAt);
+
     return this.prisma.voucher.create({
       data: {
         code: dto.code,
@@ -25,8 +28,12 @@ export class VouchersService {
   }
 
   async findAll(isActive?: boolean) {
+    const now = new Date();
     return this.prisma.voucher.findMany({
-      where: isActive === undefined ? undefined : { isActive },
+      where:
+        isActive === undefined
+          ? { isActive: true, expiresAt: { gt: now } }
+          : { isActive, ...(isActive ? { expiresAt: { gt: now } } : {}) },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -43,7 +50,8 @@ export class VouchersService {
 
   async update(id: string, dto: UpdateVoucherDto, currentUser: JwtPayload) {
     this.assertAdmin(currentUser);
-    await this.findOne(id);
+    const existing = await this.findOne(id);
+    this.ensureVoucherValidity(dto.discount ?? existing.discount, dto.expiresAt ?? existing.expiresAt.toISOString());
 
     return this.prisma.voucher.update({
       where: { id },
@@ -65,6 +73,17 @@ export class VouchersService {
   private assertAdmin(user?: JwtPayload) {
     if (!user || user.role !== 'ADMIN') {
       throw new ForbiddenException('Chi ADMIN moi thuc hien duoc hanh dong nay');
+    }
+  }
+
+  private ensureVoucherValidity(discount: number, expiresAt: string | Date) {
+    const rate = Number(discount);
+    if (Number.isNaN(rate) || rate < 0 || rate > 1) {
+      throw new BadRequestException('Discount phai trong khoang tu 0 den 1');
+    }
+    const expiry = new Date(expiresAt);
+    if (expiry.getTime() <= Date.now()) {
+      throw new BadRequestException('Ngay het han phai o tuong lai');
     }
   }
 }

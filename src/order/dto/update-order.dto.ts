@@ -1,4 +1,4 @@
-﻿import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { OrderStatus } from '@prisma/client';
 import {
   ArrayMinSize,
@@ -6,6 +6,7 @@ import {
   IsEnum,
   IsNumber,
   IsOptional,
+  IsString,
   IsUUID,
   Min,
   ValidateNested,
@@ -16,18 +17,18 @@ import { UpdateShipmentDto } from '../../shipment/dto/update-shipment.dto';
 import { OrderItemDto } from './order-item.dto';
 
 export class UpdateOrderDto {
-  @ApiPropertyOptional({ description: 'ID địa chỉ giao hàng mới' })
+  @ApiPropertyOptional({ description: 'ID dia chi giao hang moi' })
   @IsOptional()
   @IsUUID()
   addressId?: string;
 
-  @ApiPropertyOptional({ description: 'Trạng thái đơn hàng', enum: OrderStatus })
+  @ApiPropertyOptional({ description: 'Trang thai don hang', enum: OrderStatus })
   @IsOptional()
   @IsEnum(OrderStatus)
   status?: OrderStatus;
 
   @ApiPropertyOptional({
-    description: 'Danh sách sản phẩm cập nhật, truyền toàn bộ danh sách nếu muốn thay đổi',
+    description: 'Danh sach san pham cap nhat, truyen toan bo danh sach neu muon thay doi',
     type: () => [OrderItemDto],
   })
   @IsOptional()
@@ -37,21 +38,33 @@ export class UpdateOrderDto {
   @Type(() => OrderItemDto)
   items?: OrderItemDto[];
 
-  @ApiPropertyOptional({ description: 'Tổng tiền mới', example: 250 })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  totalAmount?: number;
-
-  @ApiPropertyOptional({ description: 'Cập nhật thông tin thanh toán', type: () => UpdatePaymentDto })
+  @ApiPropertyOptional({ description: 'Cap nhat thong tin thanh toan', type: () => UpdatePaymentDto })
   @IsOptional()
   @ValidateNested()
   @Type(() => UpdatePaymentDto)
   payment?: UpdatePaymentDto;
 
-  @ApiPropertyOptional({ description: 'Cập nhật thông tin vận chuyển', type: () => UpdateShipmentDto })
+  @ApiPropertyOptional({ description: 'Cap nhat thong tin van chuyen', type: () => UpdateShipmentDto })
   @IsOptional()
   @ValidateNested()
   @Type(() => UpdateShipmentDto)
   shipment?: UpdateShipmentDto;
+
+  @ApiPropertyOptional({
+    description: '(Deprecated) Tong tien client gui len se bi bo qua, server tu tinh',
+    example: 250,
+    deprecated: true,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  totalAmount?: number;
+
+  @ApiPropertyOptional({
+    description: 'Ma voucher moi (null de huy voucher hien tai)',
+    example: 'SALE2024',
+  })
+  @IsOptional()
+  @IsString()
+  voucherCode?: string | null;
 }

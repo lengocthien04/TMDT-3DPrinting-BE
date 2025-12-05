@@ -47,7 +47,7 @@ export class ShipmentService {
       throw new BadRequestException('Don hang nay da co thong tin van chuyen');
     }
 
-    return this.prisma.shipment.create({
+    const shipment = await this.prisma.shipment.create({
       data: {
         orderId: dto.orderId,
         carrier: dto.carrier,
@@ -58,6 +58,9 @@ export class ShipmentService {
       },
       include: this.defaultInclude,
     });
+
+    await this.updateOrderStatusFromShipment(dto.orderId, shipment.status);
+    return shipment;
   }
 
   async findAll(status?: ShipmentStatus, currentUser?: JwtPayload) {
@@ -102,7 +105,7 @@ export class ShipmentService {
     this.assertOrderOwnership(shipment.order.userId, currentUser);
     this.ensureOrderAllowsShipment(shipment.order.status);
 
-    return this.prisma.shipment.update({
+    const updated = await this.prisma.shipment.update({
       where: { id },
       data: {
         carrier: dto.carrier,
@@ -113,6 +116,9 @@ export class ShipmentService {
       },
       include: this.defaultInclude,
     });
+
+    await this.updateOrderStatusFromShipment(updated.order.id, updated.status);
+    return updated;
   }
 
   async remove(id: string, currentUser: JwtPayload) {
@@ -148,6 +154,28 @@ export class ShipmentService {
   private ensureOrderAllowsShipment(status: OrderStatus) {
     if (status === OrderStatus.CANCELLED) {
       throw new BadRequestException('Khong the giao hang cho don da huy');
+    }
+    if (status === OrderStatus.DELIVERED) {
+      throw new BadRequestException('Don hang da giao, khong the thay doi van chuyen');
+    }
+  }
+
+  private async updateOrderStatusFromShipment(orderId: string, status: ShipmentStatus) {
+    if (status === ShipmentStatus.DELIVERED) {
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.DELIVERED },
+      });
+    } else if (status === ShipmentStatus.IN_TRANSIT) {
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.SHIPPED },
+      });
+    } else if (status === ShipmentStatus.RETURNED) {
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.CANCELLED },
+      });
     }
   }
 

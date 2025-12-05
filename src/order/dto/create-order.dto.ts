@@ -1,4 +1,4 @@
-﻿import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { OrderStatus } from '@prisma/client';
 import {
   ArrayMinSize,
@@ -6,6 +6,7 @@ import {
   IsEnum,
   IsNumber,
   IsOptional,
+  IsString,
   IsUUID,
   Min,
   ValidateNested,
@@ -16,16 +17,21 @@ import { ShipmentDetailsDto } from '../../shipment/dto/shipment-details.dto';
 import { OrderItemDto } from './order-item.dto';
 
 export class CreateOrderDto {
-  @ApiProperty({ description: 'ID của người dùng đặt hàng', example: 'b1b88ca2-8be1-4bf3-9d6b-3de6a3ff951e' })
+  @ApiPropertyOptional({
+    description:
+      'ID nguoi dung (CUSTOMER co the bo trong, mac dinh lay tu token; ADMIN co the tao thay nguoi dung khac)',
+    example: 'b1b88ca2-8be1-4bf3-9d6b-3de6a3ff951e',
+  })
+  @IsOptional()
   @IsUUID()
-  userId: string;
+  userId?: string;
 
-  @ApiProperty({ description: 'ID địa chỉ giao hàng', example: 'd3aca6ec-9a93-4432-ba01-0c1a56c41080' })
+  @ApiProperty({ description: 'ID dia chi giao hang', example: 'd3aca6ec-9a93-4432-ba01-0c1a56c41080' })
   @IsUUID()
   addressId: string;
 
   @ApiPropertyOptional({
-    description: 'Trạng thái đơn hàng, mặc định là PENDING',
+    description: 'Trang thai don hang, mac dinh la PENDING',
     enum: OrderStatus,
   })
   @IsOptional()
@@ -33,7 +39,7 @@ export class CreateOrderDto {
   status?: OrderStatus;
 
   @ApiProperty({
-    description: 'Danh sách sản phẩm trong đơn hàng',
+    description: 'Danh sach san pham trong don hang',
     type: () => [OrderItemDto],
   })
   @IsArray()
@@ -42,14 +48,8 @@ export class CreateOrderDto {
   @Type(() => OrderItemDto)
   items: OrderItemDto[];
 
-  @ApiPropertyOptional({ description: 'Tổng tiền đơn hàng', example: 199.99 })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  totalAmount?: number;
-
   @ApiPropertyOptional({
-    description: 'Thông tin thanh toán đi kèm',
+    description: 'Thong tin thanh toan di kem',
     type: () => PaymentDetailsDto,
   })
   @IsOptional()
@@ -58,11 +58,29 @@ export class CreateOrderDto {
   payment?: PaymentDetailsDto;
 
   @ApiPropertyOptional({
-    description: 'Thông tin vận chuyển ban đầu',
+    description: 'Thong tin van chuyen ban dau',
     type: () => ShipmentDetailsDto,
   })
   @IsOptional()
   @ValidateNested()
   @Type(() => ShipmentDetailsDto)
   shipment?: ShipmentDetailsDto;
+
+  @ApiPropertyOptional({
+    description: 'Ma voucher giam gia (tuy chon)',
+    example: 'SALE2024',
+  })
+  @IsOptional()
+  @IsString()
+  voucherCode?: string;
+
+  @ApiPropertyOptional({
+    description: '(Deprecated) Tong tien gui len se bi bo qua, server tu tinh',
+    example: 199.99,
+    deprecated: true,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  totalAmount?: number;
 }
