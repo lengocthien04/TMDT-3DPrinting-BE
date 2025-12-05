@@ -23,13 +23,27 @@ import { UpdateOrderDto } from './dto/update-order.dto';
 export class OrderService {
   constructor(private readonly prisma: PrismaService) {}
 
+  //them ham ship & fax fee
+  private calculateShippingFee(subTotal: number): number {
+  // Ví dụ: ship cố định 50k như Figma
+  if (subTotal <= 0) return 0;
+  return 50_000;
+}
+
+private calculateTaxAmount(taxBase: number): number {
+  // Ví dụ: thuế 6% để ra 15k từ 250k trong mock (200k + 50k)
+  const TAX_RATE = 0.06;
+  return Math.round(taxBase * TAX_RATE);
+}
+
+
   private readonly orderInclude = {
     items: {
       include: {
         variant: {
           select: {
             id: true,
-            sku: true,
+            //sku: true,
             material: {
               select: { id: true, name: true, color: true },
             },
@@ -47,7 +61,7 @@ export class OrderService {
       select: { id: true, code: true, discount: true, expiresAt: true, isActive: true },
     },
   } as const;
-
+/*
   async create(dto: CreateOrderDto, currentUser: JwtPayload) {
     if (!dto.items?.length) {
       throw new BadRequestException('Don hang phai co it nhat 1 san pham');
@@ -104,7 +118,84 @@ export class OrderService {
       },
       include: this.orderInclude,
     });
+  } */
+ async create(dto: CreateOrderDto, currentUser: JwtPayload) {
+  const userId = this.resolveUserId(dto.userId, currentUser);
+
+  await this.ensureAddressBelongsToUser(dto.addressId, userId);
+
+  // 1. Lấy variants + tính tổng tiền sản phẩm
+  const variants = await this.loadVariants(dto.items);
+  const itemsTotal = this.calculateTotalFromVariants(dto.items, variants);
+
+
+  const subTotal = itemsTotal;
+
+  // 2. Tính phí ship & thuế
+  const shippingFee = this.calculateShippingFee(subTotal);
+  const taxBase = subTotal + shippingFee;
+  const taxAmount = this.calculateTaxAmount(taxBase);
+
+  // 3. Áp voucher (nếu có)
+  let discountAmount = 0;
+  let voucherId: string | null = null;
+
+  if (dto.voucherCode) {
+    const voucherResult = await this.applyVoucherCode(dto.voucherCode, taxBase);
+    discountAmount = voucherResult.discountAmount;
+    voucherId = voucherResult.voucherId;
   }
+
+  // 4. Tổng cuối cùng
+  const totalAmount = taxBase + taxAmount - discountAmount;
+
+  // 5. Tạo order
+  const order = await this.prisma.order.create({
+    data: {
+      userId,
+      addressId: dto.addressId,
+      status: dto.status ?? OrderStatus.PENDING,
+
+      subTotal,
+      shippingFee,
+      taxAmount,
+      discountAmount,
+      totalAmount,
+      voucherId,
+
+      items: {
+        create: dto.items.map((item) => ({
+          variantId: item.variantId,
+          quantity: item.quantity,
+          price: variants[item.variantId].price, // giá chốt theo DB
+        })),
+      },
+
+      payment: dto.payment
+        ? {
+            create: {
+              ...dto.payment,
+              // nếu FE không gửi amount thì mặc định = totalAmount
+              amount:
+                dto.payment.amount !== undefined
+                  ? dto.payment.amount
+                  : totalAmount,
+            },
+          }
+        : undefined,
+
+      shipment: dto.shipment
+        ? {
+            create: dto.shipment,
+          }
+        : undefined,
+    },
+    include: this.orderInclude,
+  });
+
+  return order;
+}
+
 
   async findAll(
     userId: string | undefined,
@@ -137,7 +228,22 @@ export class OrderService {
     this.assertOwnership(order.userId, currentUser);
     return order;
   }
+  // Thêm vào trong class OrderService, bên dưới/ bên trên findOne đều được
+private async findOneOrThrow(id: string) {
+  const order = await this.prisma.order.findUnique({
+    where: { id },
+    include: this.orderInclude,
+  });
 
+  if (!order) {
+    throw new NotFoundException('Order khong ton tai');
+  }
+
+  return order;
+}
+
+
+  /*
   async update(id: string, dto: UpdateOrderDto, currentUser: JwtPayload) {
     const existing = await this.prisma.order.findUnique({
       where: { id },
@@ -208,7 +314,78 @@ export class OrderService {
 
       return updated;
     });
+  } */
+ async update(id: string, dto: UpdateOrderDto, currentUser: JwtPayload) {
+  const existing = await this.findOneOrThrow(id);
+
+  this.assertOwnership(existing.userId, currentUser);
+
+  // update address / status / payment / shipment như cũ...
+
+  // Nếu có items mới → xóa items cũ, tạo lại
+  let subTotal = existing.subTotal.toNumber(); // nếu dùng Prisma.Decimal
+  if (dto.items && dto.items.length > 0) {
+    await this.prisma.orderItem.deleteMany({ where: { orderId: id } });
+
+    const variants = await this.loadVariants(dto.items);
+  const itemsTotal = this.calculateTotalFromVariants(dto.items, variants);
+
+
+    await this.prisma.orderItem.createMany({
+      data: dto.items.map((item) => ({
+        orderId: id,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        price: variants[item.variantId].price,
+      })),
+    });
+
+    subTotal = itemsTotal;
   }
+
+  // Tính lại shippingFee & taxAmount (có thể giữ nguyên rule hoặc cho sửa qua dto)
+  const shippingFee = this.calculateShippingFee(subTotal);
+  const taxBase = subTotal + shippingFee;
+  const taxAmount = this.calculateTaxAmount(taxBase);
+
+  // Áp voucher
+  let discountAmount = existing.discountAmount.toNumber();
+  let voucherId = existing.voucherId;
+
+  if (dto.voucherCode !== undefined) {
+    if (dto.voucherCode === null) {
+      // hủy voucher
+      discountAmount = 0;
+      voucherId = null;
+    } else {
+      const voucherResult = await this.applyVoucherCode(
+        dto.voucherCode,
+        taxBase,
+      );
+      discountAmount = voucherResult.discountAmount;
+      voucherId = voucherResult.voucherId;
+    }
+  }
+
+  const totalAmount = taxBase + taxAmount - discountAmount;
+
+  return this.prisma.order.update({
+    where: { id },
+    data: {
+      addressId: dto.addressId ?? existing.addressId,
+      status: dto.status ?? existing.status,
+      subTotal,
+      shippingFee,
+      taxAmount,
+      discountAmount,
+      totalAmount,
+      voucherId,
+      // payment / shipment update như code cũ của bạn
+    },
+    include: this.orderInclude,
+  });
+}
+
 
   async remove(id: string, currentUser: JwtPayload) {
     await this.findOne(id, currentUser);
@@ -445,4 +622,5 @@ export class OrderService {
   private isAdmin(user?: JwtPayload) {
     return user?.role === 'ADMIN';
   }
+  
 }

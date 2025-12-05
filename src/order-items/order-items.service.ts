@@ -13,7 +13,7 @@ export class OrderItemsService {
     variant: {
       select: {
         id: true,
-        sku: true,
+        //sku: true,
         product: { select: { id: true, name: true } },
       },
     },
