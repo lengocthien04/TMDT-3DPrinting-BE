@@ -11,16 +11,19 @@ import { PrismaService } from '../database/prisma.service';
 type CreateCartItemPayload = {
   variantId: string;
   quantity: number;
+  note?: string;
 };
 
-type UpdateCartItemPayload = Partial<Pick<CreateCartItemPayload, 'quantity'>>;
+type UpdateCartItemPayload = Partial<
+  Pick<CreateCartItemPayload, 'quantity' | 'note'>
+>;
 
 @Injectable()
 export class CartItemsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: string, payload: CreateCartItemPayload) {
-    const { variantId, quantity } = payload;
+    const { variantId, quantity, note } = payload;
 
     if (!quantity || quantity < 1) {
       throw new BadRequestException(ERROR_MESSAGES.CART_ITEM.INVALID_QUANTITY);
@@ -53,7 +56,7 @@ export class CartItemsService {
     }
 
     const cartItem = await this.prisma.cartItem.create({
-      data: { cartId: cart.id, variantId, quantity },
+      data: { cartId: cart.id, variantId, quantity, note },
       include: {
         variant: {
           select: {
@@ -182,7 +185,10 @@ export class CartItemsService {
 
     const updated = await this.prisma.cartItem.update({
       where: { id: itemId },
-      data: { quantity: dto.quantity ?? existing.quantity },
+      data: {
+        quantity: dto.quantity ?? existing.quantity,
+        note: dto.note !== undefined ? dto.note : existing.note,
+      },
       include: {
         variant: {
           select: {

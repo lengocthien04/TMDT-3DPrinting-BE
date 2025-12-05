@@ -145,17 +145,13 @@ export class VariantsService {
     };
   }
 
-  async create(payload: CreateVariantPayload, userRole?: UserRole) {
-    if (userRole !== UserRole.ADMIN) {
-      throw new ForbiddenException(ERROR_MESSAGES.VARIANT.PERMISSION_DENIED);
-    }
-
+  async create(payload: CreateVariantPayload) {
     const { productId, materialId, name, volume, stock } = payload;
 
     // Verify product exists
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
-      select: { id: true },
+      select: { id: true, userId: true },
     });
 
     if (!product) {
@@ -213,17 +209,24 @@ export class VariantsService {
     };
   }
 
-  async update(id: string, dto: UpdateVariantPayload, userRole?: UserRole) {
-    if (userRole !== UserRole.ADMIN) {
-      throw new ForbiddenException(ERROR_MESSAGES.VARIANT.PERMISSION_DENIED);
-    }
-
+  async update(id: string, dto: UpdateVariantPayload, user: any) {
     const existing = await this.prisma.variant.findUnique({
       where: { id },
+      include: {
+        product: { select: { userId: true } },
+      },
     });
 
     if (!existing) {
       throw new NotFoundException(ERROR_MESSAGES.VARIANT.NOT_FOUND);
+    }
+
+    // Check if user is admin or product owner
+    if (
+      user?.role !== UserRole.ADMIN &&
+      existing.product.userId !== user?.sub
+    ) {
+      throw new ForbiddenException(ERROR_MESSAGES.VARIANT.PERMISSION_DENIED);
     }
 
     // If materialId is being updated, verify the material exists
@@ -294,17 +297,24 @@ export class VariantsService {
     };
   }
 
-  async delete(id: string, userRole?: UserRole) {
-    if (userRole !== UserRole.ADMIN) {
-      throw new ForbiddenException(ERROR_MESSAGES.VARIANT.PERMISSION_DENIED);
-    }
-
+  async delete(id: string, user: any) {
     const existing = await this.prisma.variant.findUnique({
       where: { id },
+      include: {
+        product: { select: { userId: true } },
+      },
     });
 
     if (!existing) {
       throw new NotFoundException(ERROR_MESSAGES.VARIANT.NOT_FOUND);
+    }
+
+    // Check if user is admin or product owner
+    if (
+      user?.role !== UserRole.ADMIN &&
+      existing.product.userId !== user?.sub
+    ) {
+      throw new ForbiddenException(ERROR_MESSAGES.VARIANT.PERMISSION_DENIED);
     }
 
     await this.prisma.variant.delete({

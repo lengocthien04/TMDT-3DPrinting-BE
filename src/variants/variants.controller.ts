@@ -63,18 +63,17 @@ export class VariantsController {
 
   @Post()
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create a new variant (admin only)' })
+  @ApiOperation({ summary: 'Create a new variant' })
   @ApiResponse({ status: 201, description: 'Variant created successfully' })
   @ApiResponse({ status: 403, description: 'Permission denied' })
   @ApiResponse({ status: 404, description: 'Product or Material not found' })
-  async create(@Req() req, @Body() createVariantDto: CreateVariantDto) {
-    const userRole = req.user?.role;
-    return this.variantsService.create(createVariantDto as any, userRole);
+  async create(@Body() createVariantDto: CreateVariantDto) {
+    return this.variantsService.create(createVariantDto as any);
   }
 
   @Patch(':id')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Update variant (admin only)' })
+  @ApiOperation({ summary: 'Update variant' })
   @ApiParam({ name: 'id', description: 'Variant id' })
   @ApiResponse({ status: 200, description: 'Variant updated successfully' })
   @ApiResponse({ status: 403, description: 'Permission denied' })
@@ -84,19 +83,17 @@ export class VariantsController {
     @Param('id') id: string,
     @Body() updateVariantDto: UpdateVariantDto,
   ) {
-    const userRole = req.user?.role;
-    return this.variantsService.update(id, updateVariantDto as any, userRole);
+    return this.variantsService.update(id, updateVariantDto as any, req.user);
   }
 
   @Delete(':id')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Delete variant (admin only)' })
+  @ApiOperation({ summary: 'Delete variant' })
   @ApiParam({ name: 'id', description: 'Variant id' })
   @ApiResponse({ status: 200, description: 'Variant deleted successfully' })
   @ApiResponse({ status: 403, description: 'Permission denied' })
   @ApiResponse({ status: 404, description: 'Variant not found' })
   async remove(@Req() req, @Param('id') id: string) {
-    const userRole = req.user?.role;
-    return this.variantsService.delete(id, userRole);
+    return this.variantsService.delete(id, req.user);
   }
 }
