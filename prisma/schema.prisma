@@ -189,9 +189,9 @@ model Material {
 model PrintFile {
   id        String   @id @default(uuid())
   productId String?  @unique @map("product_id")
-  url       String   @db.VarChar(500)
+  url       String   @db.VarChar(500)     
   type      String   @db.VarChar(50)
-  volume    Float?   @db.DoublePrecision
+  volume    Float?   @db.DoublePrecision  
   height    Float?   @db.DoublePrecision
   width     Float?   @db.DoublePrecision
   depth     Float?   @db.DoublePrecision

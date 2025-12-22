@@ -17,6 +17,7 @@ import { PrismaService } from '../database/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderItemDto } from './dto/order-item.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
+import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()
 export class OrderService {
@@ -44,53 +45,71 @@ export class OrderService {
     address: true,
   } as const;
 
-  async create(dto: CreateOrderDto, currentUser: JwtPayload) {
-    if (!dto.items?.length) {
-      throw new BadRequestException('Don hang phai co it nhat 1 san pham');
-    }
+  async create(dto: CreateOrderDto, userId: string) {
+    const { shippingAddress, items } = dto;
 
-    this.assertOwnership(dto.userId, currentUser);
-    await this.ensureAddressBelongsToUser(dto.addressId, dto.userId);
-
-    const variants = await this.loadVariants(dto.items);
-    const totalAmount = this.calculateTotalFromVariants(dto.items, variants);
-
-    return this.prisma.order.create({
-      data: {
-        userId: dto.userId,
-        addressId: dto.addressId,
-        status: dto.status ?? OrderStatus.PENDING,
-        totalAmount,
-        items: {
-          create: dto.items.map((item) => ({
-            variantId: item.variantId,
-            quantity: item.quantity,
-            price: variants[item.variantId].price,
-          })),
+    return this.prisma.$transaction(async (tx) => {
+      const variants = await tx.variant.findMany({
+        where: {
+          id: { in: items.map((i) => i.variantId) },
         },
-        payment: dto.payment
-          ? {
-              create: {
-                method: dto.payment.method,
-                status: dto.payment.status ?? PaymentStatus.UNPAID,
-                amount: dto.payment.amount ?? totalAmount,
-                transactionId: dto.payment.transactionId,
-              },
-            }
-          : undefined,
-        shipment: dto.shipment
-          ? {
-              create: {
-                carrier: dto.shipment.carrier,
-                trackingNo: dto.shipment.trackingNo,
-                status: dto.shipment.status ?? ShipmentStatus.PREPARING,
-                shippedAt: this.toDate(dto.shipment.shippedAt),
-                deliveredAt: this.toDate(dto.shipment.deliveredAt),
-              },
-            }
-          : undefined,
-      },
-      include: this.orderInclude,
+        include: {
+          product: true,
+        },
+      });
+
+      if (variants.length !== items.length) {
+        throw new NotFoundException('Một hoặc nhiều variant không tồn tại');
+      }
+
+      // 2️⃣ Map price + tính totalAmount
+      let totalAmount = new Decimal(0);
+
+      const orderItemsData = items.map((item) => {
+        const variant = variants.find((v) => v.id === item.variantId)!;
+        const price = new Decimal(variant.product.basePrice);
+        totalAmount = totalAmount.add(price.mul(item.quantity));
+
+        return {
+          variantId: item.variantId,
+          quantity: item.quantity,
+          price, // Decimal
+        };
+      });
+
+      // 3️⃣ TẠO ADDRESS (AUTO FILL)
+      const address = await tx.address.create({
+        data: {
+          userId,
+          recipient: shippingAddress.recipient,
+          phone: shippingAddress.phone,
+          address1: shippingAddress.addressText,
+          city: 'Ho Chi Minh City',
+          state: 'Ho Chi Minh',
+          postal: '700000',
+          country: 'Vietnam',
+          isDefault: false,
+        },
+      });
+
+      // 4️⃣ TẠO ORDER (ĐÃ CÓ totalAmount)
+      const order = await tx.order.create({
+        data: {
+          userId,
+          addressId: address.id,
+          status: 'PENDING',
+          totalAmount, // ✅ FIX LỖI TS
+          items: {
+            create: orderItemsData,
+          },
+        },
+        include: {
+          items: true,
+          address: true,
+        },
+      });
+
+      return order;
     });
   }
 
@@ -178,7 +197,11 @@ export class OrderService {
                 })),
               }
             : undefined,
-          payment: this.buildPaymentWrite(existing.payment, dto.payment, totalAmount),
+          payment: this.buildPaymentWrite(
+            existing.payment,
+            dto.payment,
+            totalAmount,
+          ),
           shipment: this.buildShipmentWrite(existing.shipment, dto.shipment),
         },
         include: this.orderInclude,
@@ -190,7 +213,10 @@ export class OrderService {
 
   async remove(id: string, currentUser: JwtPayload) {
     await this.findOne(id, currentUser);
-    return this.prisma.order.delete({ where: { id }, include: this.orderInclude });
+    return this.prisma.order.delete({
+      where: { id },
+      include: this.orderInclude,
+    });
   }
 
   private calculateTotalFromVariants(
@@ -300,12 +326,19 @@ export class OrderService {
 
     const map: Record<string, { price: number; stock?: number | null }> = {};
     variants.forEach((v) => {
-      map[v.id] = { price: Number(v.product.basePrice), stock: (v as any).stock };
+      map[v.id] = {
+        price: Number(v.product.basePrice),
+        stock: (v as any).stock,
+      };
     });
 
     for (const item of items) {
       const variant = map[item.variantId];
-      if (variant.stock !== undefined && variant.stock !== null && item.quantity > variant.stock) {
+      if (
+        variant.stock !== undefined &&
+        variant.stock !== null &&
+        item.quantity > variant.stock
+      ) {
         throw new BadRequestException('So luong vuot qua ton kho');
       }
     }

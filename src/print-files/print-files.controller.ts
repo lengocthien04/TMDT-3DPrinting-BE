@@ -64,6 +64,7 @@ export class PrintFilesController {
   }
 
   @Post()
+  @Public()
   @ApiBearerAuth()
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Upload print file' })

@@ -13,6 +13,7 @@ async function main() {
   });
   if (!admin) {
     const hash = await bcrypt.hash('Admin123!', 10);
+
     admin = await prisma.user.create({
       data: {
         username: 'admin',
@@ -20,19 +21,41 @@ async function main() {
         passwordHash: hash,
         role: UserRole.ADMIN,
         isActive: true,
+
+        // 👇 TẠO ADDRESS CHUẨN THEO schema.prisma
+        addresses: {
+          create: {
+            recipient: 'Admin',
+            phone: '0900000000',
+            address1: '1 Admin Street',
+            address2: null,
+            city: 'Ho Chi Minh City',
+            state: 'Ho Chi Minh',
+            postal: '700000',
+            country: 'Vietnam',
+            isDefault: true,
+          },
+        },
       },
     });
-    console.log(`👑 Admin created: ${adminEmail}`);
+
+    console.log(`👑 Admin + default address created: ${adminEmail}`);
   } else {
     console.log('👑 Admin exists, skipping…');
   }
-
+  type SeedImage = {
+    url: string;
+    type: string; // e.g., 'image/jpeg', 'image/png'
+    altText?: string; // Optional, maps to the altText field
+  };
   // 2) Create Products
   type SeedProduct = {
     name: string;
     description: string;
     basePrice: number;
     quantity?: number;
+    images: SeedImage[];
+    tags: string[];
   };
 
   const products: SeedProduct[] = [
@@ -40,31 +63,72 @@ async function main() {
       name: 'Custom 3D Printed Phone Case',
       description:
         'Personalized phone case with custom design, protective and stylish.',
-      basePrice: 15.99,
+      basePrice: 150000,
+      tags: ['customizable', 'phone_accessory', 'protection', 'tech'],
+      images: [
+        {
+          url: 'https://www.shutterstock.com/image-photo/iphone-13-14-pro-max-600nw-2267351949.jpg',
+          type: 'image/jpeg',
+          altText: 'Blue custom 3D printed phone case',
+        },
+        {
+          url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSiJzdEv77eRUSP5MA5LuCNXkPS5hWQ5bfYcw&s',
+          type: 'image/png',
+          altText: 'Red phone case design mockup',
+        },
+      ],
     },
     {
       name: '3D Printed Desk Organizer',
       description:
         'Multi-compartment desk organizer for pens, clips, and office supplies.',
-      basePrice: 12.99,
+      basePrice: 126000,
+      tags: ['organization', 'office', 'home_decor', 'utility'],
+      images: [
+        {
+          url: 'https://images-na.ssl-images-amazon.com/images/I/81MB7BHw60L.jpg',
+          type: 'image/jpeg',
+          altText: 'Modern white 3D printed desk organizer with supplies',
+        },
+      ],
     },
     {
       name: 'Miniature Figurine',
       description:
         'Detailed miniature figurine for collectors and tabletop gaming.',
-      basePrice: 8.99,
+      basePrice: 80000,
+      tags: ['gaming', 'collectible', 'miniature', 'fantasy'],
+      images: [
+        {
+          url: 'https://images-na.ssl-images-amazon.com/images/I/81MLBEd8dPL.jpg',
+          type: 'image/webp',
+          altText: 'Hand-painted 3D printed fantasy figurine',
+        },
+      ],
     },
     {
       name: 'Plant Pot',
       description:
         'Modern geometric plant pot for succulents and small plants.',
-      basePrice: 9.99,
+      basePrice: 80000,
+      tags: ['garden', 'home_decor', 'eco_friendly'],
+      images: [
+        {
+          url: 'https://i.ytimg.com/vi/FTLb_tus4F4/maxresdefault.jpg',
+          type: 'image/jpeg',
+          altText: 'Small gray geometric plant pot',
+        },
+      ],
     },
   ];
 
   const createdProducts: any[] = [];
   for (const p of products) {
-    let product = await prisma.product.findFirst({ where: { name: p.name } });
+    let product = await prisma.product.findFirst({
+      where: { name: p.name },
+      include: { images: true },
+    });
+
     if (!product) {
       product = await prisma.product.create({
         data: {
@@ -73,12 +137,21 @@ async function main() {
           description: p.description,
           basePrice: p.basePrice,
           isActive: true,
+          images: {
+            create: p.images.map((img) => ({
+              url: img.url,
+              type: img.type,
+              altText: img.altText,
+            })),
+          },
         },
+        include: { images: true },
       });
-      console.log(`🧱 Created product: ${p.name}`);
+      console.log(`🧱 Created product + images: ${p.name}`);
     } else {
       console.log(`🔁 Product ${p.name} exists, skipping…`);
     }
+
     createdProducts.push(product);
   }
 

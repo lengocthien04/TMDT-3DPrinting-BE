@@ -3,7 +3,7 @@ version: '3.8'
 services:
   postgres:
     image: postgres:14-alpine
-    container_name: expense_tracker_db
+    container_name: 3d_printing_db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER}
@@ -14,9 +14,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - expense_tracker_network
+      - 3d_printing_network
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER}']
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER} -d ${DB_NAME}']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,7 +26,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
       target: development
-    container_name: expense_tracker_api
+    container_name: 3d_printing_api
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV}
@@ -50,12 +50,12 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - expense_tracker_network
+      - 3d_printing_network
     command: npm run start:dev
 
 volumes:
   postgres_data:
 
 networks:
-  expense_tracker_network:
+  3d_printing_network:
     driver: bridge
