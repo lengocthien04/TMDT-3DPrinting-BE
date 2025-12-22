@@ -24,22 +24,20 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentDto } from './dto/update-payment.dto';
 import { PaymentService } from './payment.service';
+import { Public } from 'src/common/decorators/public.decorator';
 
 @ApiTags('Payments')
 @Controller('payment')
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
 
-  /* ======================================================
-     VNPay - PUBLIC ENDPOINTS (NO AUTH)
-     ====================================================== */
-
+  @Public()
   @Get('vnpay-return')
   @ApiOperation({ summary: 'VNPay Return URL (browser redirect)' })
   vnpayReturn(@Query() query: any) {
     return this.paymentService.handleVnPayReturn(query);
   }
-
+  @Public()
   @Get('vnpay-ipn')
   @ApiOperation({ summary: 'VNPay IPN (server to server)' })
   vnpayIpn(@Query() query: any) {

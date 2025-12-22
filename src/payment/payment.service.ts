@@ -261,15 +261,40 @@ export class PaymentService {
      VNPAY - RETURN URL (BROWSER) ❌ KHÔNG UPDATE DB
      ====================================================== */
 
-  handleVnPayReturn(query: any) {
+  async handleVnPayReturn(query: any) {
     if (!this.verifyVnPaySignature(query)) {
       throw new BadRequestException('Chu ky khong hop le');
     }
 
+    const paymentId = query['vnp_TxnRef'];
+    const responseCode = query['vnp_ResponseCode'];
+
+    if (responseCode === '00') {
+      const payment = await this.prisma.payment.findUnique({
+        where: { id: paymentId },
+      });
+
+      if (payment && payment.status !== PaymentStatus.PAID) {
+        await this.prisma.$transaction([
+          this.prisma.payment.update({
+            where: { id: paymentId },
+            data: {
+              status: PaymentStatus.PAID,
+              transactionId: query['vnp_TransactionNo'],
+            },
+          }),
+          this.prisma.order.update({
+            where: { id: payment.orderId },
+            data: { status: OrderStatus.CONFIRMED },
+          }),
+        ]);
+      }
+    }
+
     return {
-      paymentId: query['vnp_TxnRef'],
-      responseCode: query['vnp_ResponseCode'],
-      success: query['vnp_ResponseCode'] === '00',
+      paymentId,
+      responseCode,
+      success: responseCode === '00',
     };
   }
 

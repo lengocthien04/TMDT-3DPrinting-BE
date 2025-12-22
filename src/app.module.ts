@@ -58,6 +58,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     ShipmentModule,
     PaymentModule,
     VouchersModule,
+    PaymentModule,
   ],
   providers: [
     {
